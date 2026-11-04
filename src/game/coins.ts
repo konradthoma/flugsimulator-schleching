@@ -75,6 +75,11 @@ export class CoinField {
     this.updateMatrices();
   }
 
+  /** Lichtsäulen ein- oder ausblenden */
+  set beaconsVisible(v: boolean) {
+    this.goldBeacons.visible = this.blueBeacons.visible = v;
+  }
+
   get total() {
     return this.coins.length;
   }

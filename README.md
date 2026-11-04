@@ -7,10 +7,18 @@ Berglandschaft rund um Schleching im Chiemgau.
 
 ## So geht's
 
-Wähle ein Flugzeug (Piccolo, Falke oder Blitz) und sammle Münzen:
-goldene Münzen geben 1 Punkt, blaue Münzen über den Gipfeln 5 Punkte.
-Wer alle Münzen schafft, bekommt 50 Bonuspunkte. Der gelbe Pfeil zeigt zur nächsten Münze.
-Deine Punkte werden im Browser gespeichert.
+Wähle im Menü ein Spiel und ein Flugzeug (Piccolo, Falke oder Blitz):
+
+- **Münzen sammeln:** Goldene Münzen geben 1 Punkt, blaue Münzen über den Gipfeln 5 Punkte.
+  Lichtsäulen zeigen, wo Münzreihen liegen. Alle Münzen geschafft = 50 Bonuspunkte.
+- **Ringrennen:** Flieg durch 16 Ringe in der richtigen Reihenfolge. Die Zeit startet am grünen
+  Ring und stoppt am weißen Zielring. Für jedes Flugzeug gibt es eine eigene Bestzeit.
+  Ins Ziel kommen bringt 10 Punkte, eine neue Bestzeit 20 Punkte extra.
+
+Achtung: Andere Flugzeuge kreisen über der Gegend. Weich ihnen aus!
+
+In den **Einstellungen** im Menü kann man andere Flugzeuge, Lichtsäulen, den Wegweiser-Pfeil
+und die Töne ausschalten. Punkte, Bestzeiten und Einstellungen werden im Browser gespeichert.
 
 ## Steuerung
 

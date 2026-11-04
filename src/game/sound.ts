@@ -4,6 +4,7 @@
  */
 export class Sound {
   private ctx?: AudioContext;
+  enabled = true;
 
   constructor() {
     const unlock = () => {
@@ -16,7 +17,7 @@ export class Sound {
 
   private tone(freq: number, start: number, duration: number, type: OscillatorType = 'triangle', volume = 0.15) {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
+    if (!this.enabled || !ctx || ctx.state !== 'running') return;
     const t = ctx.currentTime + start;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

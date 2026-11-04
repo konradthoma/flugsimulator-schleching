@@ -39,22 +39,28 @@ export class Hud {
     this.speed.style.color = d.stalled ? '#ff6b5b' : '';
   }
 
-  private score = $('hud-score');
-  private total = $('hud-total');
-  private left = $('hud-left');
+  private score = $('score');
+  private scoreSub = $('score-sub');
+  private warning = $('hud-warning');
   private pointer = $('coin-pointer');
   private arrow = $('coin-arrow');
   private dist = $('coin-dist');
   private popupEl = $('hud-popup');
   private popupTimer = 0;
 
-  setScore(flight: number, total: number, left: number) {
-    this.score.textContent = String(flight);
-    this.total.textContent = String(total);
-    this.left.textContent = String(left);
+  /** Große Anzeige oben in der Mitte (Punkte oder Zeit) und eine kleine Zeile darunter. */
+  setTopInfo(big: string, small: string) {
+    if (this.score.textContent !== big) this.score.textContent = big;
+    if (this.scoreSub.textContent !== small) this.scoreSub.textContent = small;
   }
 
-  /** Pfeil zur nächsten Münze. relDeg: 0 = geradeaus, 90 = rechts. */
+  /** Warnung vor einem anderen Flugzeug (null = keine Warnung). */
+  setWarning(text: string | null) {
+    this.warning.textContent = text ?? '';
+    this.warning.style.visibility = text ? 'visible' : 'hidden';
+  }
+
+  /** Pfeil zum nächsten Ziel. relDeg: 0 = geradeaus, 90 = rechts. */
   setCoinPointer(relDeg: number | null, distance = 0, heightDiff = 0) {
     if (relDeg === null) {
       this.pointer.style.visibility = 'hidden';

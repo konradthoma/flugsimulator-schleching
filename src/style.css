@@ -14,6 +14,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe3f2; fon
 #coin-pointer { margin-top: 6px; font-size: 15px; font-weight: 600; }
 #coin-arrow { display: inline-block; color: #ffd84a; font-size: 26px; transition: transform .1s linear; }
 #hud-place { margin-top: 4px; font-size: 20px; font-weight: 600; }
+#hud-warning { position: absolute; bottom: 22%; left: 50%; transform: translateX(-50%); max-width: 90%; padding: 8px 16px; border-radius: 12px; background: rgba(40,0,0,.65); text-align: center; font-size: 22px; font-weight: 800; color: #ff7a6a; visibility: hidden; animation: blink .5s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .35; } }
 #hud-popup { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 44px; font-weight: 900; color: #ffd84a; opacity: 0; transition: opacity .6s, transform .6s; }
 #hud-popup.show { opacity: 1; transform: translateY(-20px); transition: none; }
 body.touch #top-center { top: max(80px, calc(env(safe-area-inset-top) + 70px)); }
@@ -37,6 +39,14 @@ body.touch #score { font-size: 28px; }
 #menu .stat { font-size: 13px; display: block; }
 #menu .stat i { display: block; height: 8px; margin-top: 3px; border-radius: 4px; background: #ffd84a; }
 #menu .speed { font-weight: 700; }
+#menu .modes { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+#menu .mode { width: 220px; display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 14px; border: 3px solid transparent; background: rgba(255,255,255,.12); color: #fff; font: inherit; cursor: pointer; }
+#menu .mode b { font-size: 19px; }
+#menu .mode small { opacity: .85; }
+#menu .mode.selected { border-color: #ffd84a; background: rgba(255,216,74,.18); }
+#menu .settings { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; font-size: 16px; background: rgba(255,255,255,.08); padding: 12px 18px; border-radius: 14px; }
+#menu .settings label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+#menu .settings input { width: 22px; height: 22px; accent-color: #ffd84a; }
 #menu .start { position: sticky; bottom: max(12px, env(safe-area-inset-bottom)); box-shadow: 0 4px 16px rgba(0,0,0,.4); margin-top: 20px; font: inherit; font-size: 24px; font-weight: 800; padding: 14px 40px; border-radius: 14px; border: none; background: #ffd84a; color: #233; cursor: pointer; }
 #menu .hint { opacity: .8; font-size: 14px; margin-top: 16px; }
 @media (max-width: 760px), (max-height: 600px) {
@@ -45,6 +55,9 @@ body.touch #score { font-size: 28px; }
   #menu h2 { font-size: 16px; margin: 10px 0 8px; }
   #menu .coins { font-size: 14px; }
   #menu .cards { gap: 8px; }
+  #menu .mode { width: min(46%, 220px); padding: 8px 10px; }
+  #menu .mode b { font-size: 16px; }
+  #menu .settings { font-size: 14px; }
   #menu .card { width: min(100%, 340px); padding: 10px 12px; gap: 4px; }
   #menu .card b { font-size: 18px; }
   #menu .card small { min-height: 0; }
