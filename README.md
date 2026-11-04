@@ -5,6 +5,13 @@ Berglandschaft rund um Schleching im Chiemgau.
 
 **Spielen:** https://konradthoma.github.io/flugsimulator-schleching/
 
+## So geht's
+
+Wähle ein Flugzeug (Piccolo, Falke oder Blitz) und sammle Münzen:
+goldene Münzen geben 1 Punkt, blaue Münzen über den Gipfeln 5 Punkte.
+Wer alle Münzen schafft, bekommt 50 Bonuspunkte. Der gelbe Pfeil zeigt zur nächsten Münze.
+Deine Punkte werden im Browser gespeichert.
+
 ## Steuerung
 
 | Tastatur | iPad | Wirkung |
@@ -16,6 +23,7 @@ Berglandschaft rund um Schleching im Chiemgau.
 | C | 📷 | Kamera wechseln |
 | H | Hilfe | Flughilfe an/aus |
 | Leertaste | ↻ | Neustart |
+| M | ✈ | Flugzeug wählen |
 
 Tipp fürs iPad: In Safari auf „Teilen → Zum Home-Bildschirm“ tippen, dann läuft das Spiel im Vollbild.
 

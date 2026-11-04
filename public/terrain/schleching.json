@@ -5,8 +5,9 @@
     "lon": 12.3936
   },
   "sizeMeters": 20000,
-  "grid": 1024,
-  "minHeight": 521,
+  "grid": 2048,
+  "format": "int16-decimeter-delta",
+  "minHeight": 520,
   "maxHeight": 1765,
   "source": "AWS Terrain Tiles (Terrarium), Mapzen / Copernicus / SRTM u.a."
 }

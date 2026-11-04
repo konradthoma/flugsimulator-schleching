@@ -20,7 +20,13 @@
         <div><span class="label">Richtung</span><span id="hud-heading">N</span></div>
         <div class="throttle"><span class="label">Gas</span><div class="bar"><div id="hud-throttle"></div></div></div>
       </div>
-      <div id="hud-place"></div>
+      <div id="top-center">
+        <div id="score">🪙 <span id="hud-score">0</span></div>
+        <div id="score-sub">Gesamt <span id="hud-total">0</span> · noch <span id="hud-left">0</span> Münzen</div>
+        <div id="coin-pointer"><span id="coin-arrow">➤</span> <span id="coin-dist"></span></div>
+        <div id="hud-place"></div>
+      </div>
+      <div id="hud-popup"></div>
       <div id="hud-message"></div>
       <div id="controls">
         <b>Steuerung</b> <small>(K zum Ein-/Ausblenden)</small><br />
@@ -31,7 +37,8 @@
         <kbd>C</kbd> Kamera wechseln<br />
         <kbd>I</kbd> Höhenruder umkehren: <span id="hud-invert">aus</span><br />
         <kbd>H</kbd> Flughilfe: <span id="hud-assist">an</span><br />
-        <kbd>Leertaste</kbd> Neustart
+        <kbd>Leertaste</kbd> Neustart<br />
+        <kbd>M</kbd> Flugzeug wählen
       </div>
     </div>
     <script type="module" src="./src/main.ts"></script>

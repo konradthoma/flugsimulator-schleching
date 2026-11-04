@@ -39,6 +39,41 @@ export class Hud {
     this.speed.style.color = d.stalled ? '#ff6b5b' : '';
   }
 
+  private score = $('hud-score');
+  private total = $('hud-total');
+  private left = $('hud-left');
+  private pointer = $('coin-pointer');
+  private arrow = $('coin-arrow');
+  private dist = $('coin-dist');
+  private popupEl = $('hud-popup');
+  private popupTimer = 0;
+
+  setScore(flight: number, total: number, left: number) {
+    this.score.textContent = String(flight);
+    this.total.textContent = String(total);
+    this.left.textContent = String(left);
+  }
+
+  /** Pfeil zur nächsten Münze. relDeg: 0 = geradeaus, 90 = rechts. */
+  setCoinPointer(relDeg: number | null, distance = 0, heightDiff = 0) {
+    if (relDeg === null) {
+      this.pointer.style.visibility = 'hidden';
+      return;
+    }
+    this.pointer.style.visibility = '';
+    this.arrow.style.transform = `rotate(${relDeg - 90}deg)`;
+    const updown = heightDiff > 40 ? ' ▲' : heightDiff < -40 ? ' ▼' : '';
+    this.dist.textContent = distance > 1000 ? `${(distance / 1000).toFixed(1)} km${updown}` : `${Math.round(distance)} m${updown}`;
+  }
+
+  /** Kurz eingeblendeter Text, z. B. "+5". */
+  popup(text: string) {
+    this.popupEl.textContent = text;
+    this.popupEl.classList.add('show');
+    window.clearTimeout(this.popupTimer);
+    this.popupTimer = window.setTimeout(() => this.popupEl.classList.remove('show'), 350);
+  }
+
   setPlace(text: string) {
     this.place.textContent = text;
   }

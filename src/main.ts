@@ -1,12 +1,16 @@
 import * as THREE from 'three';
-import { Terrain } from './world/terrain';
+import { Terrain, TerrainRenderer } from './world/terrain';
 import { createSky } from './world/sky';
 import { createForest, createVillage } from './world/decor';
-import { createPlaneModel, STARTER_PLANE } from './vehicles/plane';
+import { getPlane, PlaneModel, PlaneStats } from './vehicles/plane';
 import { PlanePhysics } from './physics/planePhysics';
+import { CoinField } from './game/coins';
+import { loadSave, writeSave } from './game/save';
+import { Sound } from './game/sound';
 import { Input } from './input';
 import { Hud } from './ui/hud';
 import { TouchControls } from './ui/touch';
+import { PlaneMenu } from './ui/menu';
 
 // ---------- Grundaufbau ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -22,11 +26,17 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+const START = new THREE.Vector3(0, 0, 3000); // südlich von Schleching, Blick nach Norden
+
 const skyDome = createSky(scene);
 const terrain = await Terrain.load('schleching');
-scene.add(terrain.buildMesh());
+const terrainRenderer = new TerrainRenderer(terrain);
+terrainRenderer.buildAll(START);
+scene.add(terrainRenderer.group);
 scene.add(createForest(terrain));
 scene.add(createVillage(terrain));
+const coins = new CoinField(terrain);
+scene.add(coins.group);
 
 // ---------- Orte ----------
 const M_PER_DEG_LAT = 111319.5;
@@ -39,33 +49,68 @@ const PLACES = [
   { name: 'Geigelstein (1808 m)', pos: geoToWorld(47.7073, 12.3345), radius: 1500 },
 ];
 
-// ---------- Flugzeug ----------
-const { model: planeModel, propeller } = createPlaneModel();
-scene.add(planeModel);
-const plane = new PlanePhysics(STARTER_PLANE);
-
+// ---------- Spielzustand ----------
+const save = loadSave();
 const input = new Input();
 const touch = new TouchControls();
+const sound = new Sound();
 const hud = new Hud();
+const menu = new PlaneMenu(save.plane);
 hud.show();
 
-let crashed = false;
+type State = 'menu' | 'flying' | 'crashed';
+let state: State = 'menu';
 let cameraMode: 'chase' | 'cockpit' = 'chase';
 let invertPitch = false;
 let assist = true;
 let outsideTime = 0;
+let flightScore = 0;
+
+const plane = new PlanePhysics(getPlane(save.plane));
+let planeModel: PlaneModel = plane.stats.build();
+scene.add(planeModel.model);
+
+function setPlane(stats: PlaneStats) {
+  scene.remove(planeModel.model);
+  planeModel = stats.build();
+  scene.add(planeModel.model);
+  plane.stats = stats;
+}
+
+function openMenu() {
+  state = 'menu';
+  hud.setMessage('');
+  menu.show(save.coins, save.bestFlight, (stats) => {
+    setPlane(stats);
+    save.plane = stats.id;
+    writeSave(save);
+    startFlight();
+  });
+}
 
 function startFlight() {
-  // Start südlich von Schleching, Blick nach Norden über das Dorf
-  const x = 0;
-  const z = 3000;
-  const y = Math.max(terrain.heightAt(x, z) + 450, 1100);
-  plane.reset(new THREE.Vector3(x, y, z), 0, 45);
-  crashed = false;
+  const y = Math.max(terrain.heightAt(START.x, START.z) + 450, 1100);
+  plane.reset(new THREE.Vector3(START.x, y, START.z), 0, plane.stats.stallSpeed * 1.8);
+  coins.reset();
+  flightScore = 0;
+  state = 'flying';
   outsideTime = 0;
-  planeModel.visible = cameraMode === 'chase';
+  planeModel.model.visible = cameraMode === 'chase';
   hud.setMessage('');
   snapCamera();
+}
+
+function crash() {
+  state = 'crashed';
+  planeModel.model.visible = false;
+  sound.crash();
+  const record = flightScore > save.bestFlight;
+  if (record) {
+    save.bestFlight = flightScore;
+    writeSave(save);
+  }
+  const again = touch.enabled ? 'Tippe auf ↻ für einen neuen Flug' : 'Leertaste: neuer Flug · M: Flugzeug wählen';
+  hud.setMessage(`💥 Abgestürzt!\n${flightScore} ${flightScore === 1 ? 'Punkt' : 'Punkte'} in diesem Flug${record ? ' – neuer Rekord! 🏆' : ''}\n${again}`);
 }
 
 // ---------- Kamera ----------
@@ -76,8 +121,8 @@ const tmp = new THREE.Vector3();
 
 function chaseTarget(out: THREE.Vector3) {
   plane.getForward(fwd);
-  out.copy(plane.position).addScaledVector(fwd, -24);
-  out.y += 7;
+  out.copy(plane.position).addScaledVector(fwd, -plane.stats.cameraDistance);
+  out.y += plane.stats.cameraDistance * 0.3;
   return out;
 }
 
@@ -85,6 +130,7 @@ function snapCamera() {
   chaseTarget(camPos);
   camera.position.copy(camPos);
   camLook.copy(plane.position);
+  camera.lookAt(camLook);
 }
 
 function updateCamera(dt: number) {
@@ -105,52 +151,90 @@ function updateCamera(dt: number) {
   camera.lookAt(camLook);
 }
 
+// ---------- Münzen ----------
+const prevPos = new THREE.Vector3();
+
+function handleCoins() {
+  const radius = 9 + plane.speed * 0.03;
+  const hits = coins.collect(prevPos, plane.position, radius);
+  if (hits.length === 0) return;
+  const points = hits.reduce((sum, c) => sum + c.value, 0);
+  flightScore += points;
+  save.coins += points;
+  if (hits.some((c) => c.value > 1)) sound.bigCoin();
+  else sound.coin();
+  hud.popup(`+${points}`);
+
+  if (coins.remaining === 0) {
+    const bonus = 50;
+    flightScore += bonus;
+    save.coins += bonus;
+    sound.allCollected();
+    hud.setMessage(`🎉 Alle Münzen gesammelt!\n+${bonus} Bonuspunkte`);
+    window.setTimeout(() => state === 'flying' && hud.setMessage(''), 4000);
+  }
+  writeSave(save);
+}
+
+function updateCoinPointer() {
+  const target = coins.nearest(plane.position);
+  if (!target) return hud.setCoinPointer(null);
+  const dx = target.position.x - plane.position.x;
+  const dz = target.position.z - plane.position.z;
+  const bearing = THREE.MathUtils.radToDeg(Math.atan2(dx, -dz));
+  const rel = ((bearing - plane.headingDeg + 540) % 360) - 180;
+  hud.setCoinPointer(rel, Math.hypot(dx, dz), target.position.y - plane.position.y);
+}
+
 // ---------- Spielschleife ----------
 const clock = new THREE.Clock();
-startFlight();
+plane.reset(new THREE.Vector3(START.x, 1100, START.z), 0, 0);
+snapCamera();
+openMenu();
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
 
-  if (input.wasPressed('KeyC') || touch.wasPressed('camera')) {
-    cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase';
-    planeModel.visible = cameraMode === 'chase' && !crashed;
-    if (cameraMode === 'chase') snapCamera();
+  if (state !== 'menu' && !menu.visible) {
+    if (input.wasPressed('KeyC') || touch.wasPressed('camera')) {
+      cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase';
+      planeModel.model.visible = cameraMode === 'chase' && state === 'flying';
+      if (cameraMode === 'chase') snapCamera();
+    }
+    if (input.wasPressed('KeyK')) hud.toggleControls();
+    if (input.wasPressed('KeyI')) invertPitch = !invertPitch;
+    if (input.wasPressed('KeyH') || touch.wasPressed('assist')) assist = !assist;
+    if (input.wasPressed('Space') || touch.wasPressed('restart')) startFlight();
+    if (input.wasPressed('KeyM') || touch.wasPressed('menu')) openMenu();
   }
-  if (input.wasPressed('KeyK')) hud.toggleControls();
-  if (input.wasPressed('KeyI')) invertPitch = !invertPitch;
-  if (input.wasPressed('KeyH') || touch.wasPressed('assist')) assist = !assist;
-  if (input.wasPressed('Space') || touch.wasPressed('restart')) startFlight();
   hud.setOptions(invertPitch, assist);
 
-  if (!crashed) {
+  if (state === 'flying') {
     const newThrottle = touch.takeThrottle();
     if (newThrottle !== null) plane.throttle = newThrottle;
     const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
-    const pitch = clampAxis(input.axis('ArrowUp', 'ArrowDown') + touch.pitch) * (invertPitch ? -1 : 1);
+    prevPos.copy(plane.position);
     plane.update(dt, {
       throttle: input.axis('KeyS', 'KeyW'),
-      pitch,
+      pitch: clampAxis(input.axis('ArrowUp', 'ArrowDown') + touch.pitch) * (invertPitch ? -1 : 1),
       roll: clampAxis(input.axis('ArrowLeft', 'ArrowRight') + touch.roll),
       yaw: input.axis('KeyA', 'KeyD'),
       assist,
     });
+    handleCoins();
 
     const ground = terrain.heightAt(plane.position.x, plane.position.z);
     if (plane.position.y < ground + 1.2) {
-      crashed = true;
       plane.position.y = ground + 1.2;
-      planeModel.visible = false;
-      hud.setMessage(touch.enabled ? '💥 Abgestürzt!\nTippe auf ↻ für einen neuen Flug' : '💥 Abgestürzt!\nDrücke die Leertaste für einen neuen Flug');
+      crash();
     }
 
     // Gebietsgrenze
     const margin = Math.max(Math.abs(plane.position.x), Math.abs(plane.position.z)) - terrain.half;
-    if (!crashed) {
+    if (state === 'flying') {
       if (margin > 500) {
         outsideTime += dt;
-        const left = Math.ceil(10 - outsideTime);
-        hud.setMessage(`Du verlässt das Gebiet – kehre um!\n${left}`);
+        hud.setMessage(`Du verlässt das Gebiet – kehre um!\n${Math.ceil(10 - outsideTime)}`);
         if (outsideTime > 10) startFlight();
       } else if (outsideTime > 0) {
         outsideTime = 0;
@@ -158,13 +242,15 @@ function frame() {
       }
     }
 
-    planeModel.position.copy(plane.position);
-    planeModel.quaternion.copy(plane.quaternion);
-    propeller.rotation.z += dt * (20 + plane.throttle * 60);
+    planeModel.model.position.copy(plane.position);
+    planeModel.model.quaternion.copy(plane.quaternion);
+    if (planeModel.propeller) planeModel.propeller.rotation.z += dt * (20 + plane.throttle * 60);
+    if (planeModel.flame) {
+      planeModel.flame.scale.set(1, 1, 0.2 + plane.throttle * (0.9 + Math.random() * 0.25));
+    }
 
-    const place = PLACES.find((p) => p.pos.distanceTo(new THREE.Vector2(plane.position.x, plane.position.z)) < p.radius);
-    hud.setPlace(place ? place.name : '');
-
+    const here = new THREE.Vector2(plane.position.x, plane.position.z);
+    hud.setPlace(PLACES.find((p) => p.pos.distanceTo(here) < p.radius)?.name ?? '');
     hud.update({
       speed: plane.speed,
       altitude: plane.position.y,
@@ -173,9 +259,13 @@ function frame() {
       throttle: plane.throttle,
       stalled: plane.stalled,
     });
+    updateCoinPointer();
   }
+  hud.setScore(flightScore, save.coins, coins.remaining);
 
+  coins.update(dt);
   updateCamera(dt);
+  terrainRenderer.update(camera.position);
   skyDome.position.copy(camera.position);
   renderer.render(scene, camera);
   touch.showThrottle(plane.throttle);
@@ -186,4 +276,4 @@ function frame() {
 requestAnimationFrame(frame);
 
 // Zum Testen in der Browser-Konsole
-(window as unknown as Record<string, unknown>).game = { plane, planeModel, camera, scene, terrain };
+(window as unknown as Record<string, unknown>).game = { plane, camera, scene, terrain, coins, save, get model() { return planeModel; } };

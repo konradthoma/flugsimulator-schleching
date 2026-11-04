@@ -8,7 +8,37 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #cfe3f2; fon
 .throttle { display: flex; align-items: center; }
 .bar { width: 100px; height: 10px; background: rgba(255,255,255,.25); border-radius: 5px; overflow: hidden; }
 #hud-throttle { height: 100%; width: 50%; background: #ffcc33; }
-#hud-place { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); font-size: 22px; font-weight: 600; }
+#top-center { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
+#score { font-size: 34px; font-weight: 800; }
+#score-sub { font-size: 13px; opacity: .9; }
+#coin-pointer { margin-top: 6px; font-size: 15px; font-weight: 600; }
+#coin-arrow { display: inline-block; color: #ffd84a; font-size: 26px; transition: transform .1s linear; }
+#hud-place { margin-top: 4px; font-size: 20px; font-weight: 600; }
+#hud-popup { position: absolute; top: 30%; width: 100%; text-align: center; font-size: 44px; font-weight: 900; color: #ffd84a; opacity: 0; transition: opacity .6s, transform .6s; }
+#hud-popup.show { opacity: 1; transform: translateY(-20px); transition: none; }
+body.touch #top-center { top: max(80px, calc(env(safe-area-inset-top) + 70px)); }
+body.touch #score { font-size: 28px; }
+@media (max-width: 760px) {
+  #top-center { left: auto; right: 16px; transform: none; text-align: right; top: 16px; }
+  body.touch #top-center { top: 84px; }
+  #hud-message { font-size: 26px; }
+}
+
+/* ---------- Menü ---------- */
+#menu { position: fixed; inset: 0; z-index: 10; overflow-y: auto; background: rgba(15,35,55,.82); color: #fff; text-align: center; padding: 24px 16px; box-sizing: border-box; }
+#menu h1 { margin: 8px 0 4px; font-size: 30px; }
+#menu h2 { font-size: 20px; margin: 18px 0 10px; }
+#menu .coins { font-size: 18px; margin: 0; }
+#menu .cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+#menu .card { width: 220px; text-align: left; display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; border: 3px solid transparent; background: rgba(255,255,255,.12); color: #fff; font: inherit; cursor: pointer; }
+#menu .card b { font-size: 22px; }
+#menu .card small { opacity: .85; min-height: 36px; }
+#menu .card.selected { border-color: #ffd84a; background: rgba(255,216,74,.18); }
+#menu .stat { font-size: 13px; display: block; }
+#menu .stat i { display: block; height: 8px; margin-top: 3px; border-radius: 4px; background: #ffd84a; }
+#menu .speed { font-weight: 700; }
+#menu .start { margin-top: 20px; font: inherit; font-size: 24px; font-weight: 800; padding: 14px 40px; border-radius: 14px; border: none; background: #ffd84a; color: #233; cursor: pointer; }
+#menu .hint { opacity: .8; font-size: 14px; margin-top: 16px; }
 #hud-message { position: absolute; top: 40%; width: 100%; text-align: center; font-size: 36px; font-weight: 800; white-space: pre-line; }
 #controls { position: absolute; bottom: 16px; left: 16px; background: rgba(20,40,60,.45); padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.7; }
 #controls.hidden { display: none; }

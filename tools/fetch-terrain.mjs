@@ -10,8 +10,8 @@ import path from 'node:path';
 
 const CENTER = { lat: 47.7225, lon: 12.3936 }; // Schleching
 const SIZE_M = 20000; // Kantenlänge des Gebiets in Metern
-const GRID = 1024; // Anzahl Höhenpunkte pro Kante
-const ZOOM = 13; // ca. 13 m pro Pixel in dieser Breite
+const GRID = 2048; // Anzahl Höhenpunkte pro Kante (ca. 10 m Abstand)
+const ZOOM = 14; // ca. 6,5 m pro Pixel in dieser Breite
 
 const OUT_DIR = path.resolve('public/terrain');
 const CACHE_DIR = path.resolve('tools/.tile-cache');
@@ -88,7 +88,8 @@ function elevBilinear(px, py) {
 }
 
 // Gitter: Zeile 0 = Norden, Spalte 0 = Westen
-const heights = new Float32Array(GRID * GRID);
+// Gespeichert als ganze Dezimeter (Int16): halb so groß wie Float32, 10 cm genau
+const heights = new Int16Array(GRID * GRID);
 let min = Infinity;
 let max = -Infinity;
 for (let row = 0; row < GRID; row++) {
@@ -99,13 +100,23 @@ for (let row = 0; row < GRID; row++) {
     const lon = CENTER.lon + xM / mPerDegLon;
     const p = lonLatToPixel(lon, lat);
     const h = elevBilinear(p.x, p.y);
-    heights[row * GRID + col] = h;
+    heights[row * GRID + col] = Math.round(h * 10);
     if (h < min) min = h;
     if (h > max) max = h;
   }
 }
 
-fs.writeFileSync(path.join(OUT_DIR, 'schleching.bin'), Buffer.from(heights.buffer));
+// Delta-Kodierung: jeder Wert wird als Unterschied zum linken Nachbarn gespeichert
+// (am Zeilenanfang: zum Anfang der Zeile darüber). Das lässt sich viel besser komprimieren.
+const deltas = new Int16Array(heights.length);
+for (let row = 0; row < GRID; row++) {
+  for (let col = 0; col < GRID; col++) {
+    const i = row * GRID + col;
+    const prev = col > 0 ? heights[i - 1] : row > 0 ? heights[i - GRID] : 0;
+    deltas[i] = heights[i] - prev;
+  }
+}
+fs.writeFileSync(path.join(OUT_DIR, 'schleching.bin'), Buffer.from(deltas.buffer));
 fs.writeFileSync(
   path.join(OUT_DIR, 'schleching.json'),
   JSON.stringify(
@@ -114,6 +125,7 @@ fs.writeFileSync(
       center: CENTER,
       sizeMeters: SIZE_M,
       grid: GRID,
+      format: 'int16-decimeter-delta',
       minHeight: Math.round(min),
       maxHeight: Math.round(max),
       source: 'AWS Terrain Tiles (Terrarium), Mapzen / Copernicus / SRTM u.a.',

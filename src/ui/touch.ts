@@ -30,6 +30,7 @@ export class TouchControls {
         <button data-action="camera">📷</button>
         <button data-action="assist">Hilfe</button>
         <button data-action="restart">↻</button>
+        <button data-action="menu">✈</button>
       </div>`;
     document.body.appendChild(root);
 
@@ -108,7 +109,7 @@ export class TouchControls {
     if (this.throttleFill) this.throttleFill.style.height = `${Math.round(value * 100)}%`;
   }
 
-  wasPressed(action: 'camera' | 'assist' | 'restart'): boolean {
+  wasPressed(action: 'camera' | 'assist' | 'restart' | 'menu'): boolean {
     return this.pressed.has(action);
   }
 

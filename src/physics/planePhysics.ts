@@ -102,7 +102,8 @@ export class PlanePhysics {
 
     // Schräglage -> Kurve (wie bei einer echten Kurve: g * tan(Schräglage) / v)
     const bank = THREE.MathUtils.clamp(this.bank, -1.3, 1.3);
-    const turnRate = (G * Math.tan(bank)) / Math.max(this.speed, 15);
+    // (Geschwindigkeit nach oben begrenzt, damit auch schnelle Jets im kleinen Gebiet wenden können)
+    const turnRate = (G * Math.tan(bank)) / THREE.MathUtils.clamp(this.speed, 15, 70);
     this.tmpQ.setFromAxisAngle(WORLD_UP, -turnRate * dt);
     this.quaternion.premultiply(this.tmpQ);
 

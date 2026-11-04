@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { hash2, smoothstep } from '../util/noise';
+import { hash2, smoothstep, valueNoise } from '../util/noise';
 
 export interface TerrainMeta {
   name: string;
   center: { lat: number; lon: number };
   sizeMeters: number;
   grid: number;
+  format: string;
   minHeight: number;
   maxHeight: number;
 }
@@ -31,11 +32,12 @@ export class Terrain {
   }
 
   static async load(name: string): Promise<Terrain> {
+    const base = import.meta.env.BASE_URL;
     const [meta, buf] = await Promise.all([
-      fetch(`${import.meta.env.BASE_URL}terrain/${name}.json`).then((r) => r.json() as Promise<TerrainMeta>),
-      fetch(`${import.meta.env.BASE_URL}terrain/${name}.bin`).then((r) => r.arrayBuffer()),
+      fetch(`${base}terrain/${name}.json`).then((r) => r.json() as Promise<TerrainMeta>),
+      fetch(`${base}terrain/${name}.bin`).then((r) => r.arrayBuffer()),
     ]);
-    return new Terrain(new Float32Array(buf), meta);
+    return new Terrain(decodeHeights(buf, meta), meta);
   }
 
   /** Echte Höhe aus den Daten (ohne Randabfall). */
@@ -54,11 +56,18 @@ export class Terrain {
     return top * (1 - tz) + bottom * tz;
   }
 
-  /** Geländehöhe an einer Stelle (zum Rand hin sanft abgeflacht). */
+  /**
+   * Geländehöhe an einer Stelle.
+   * Zu den echten Daten kommen kleine Unebenheiten an den Berghängen (nicht im Tal),
+   * und zum Rand hin flacht alles sanft ab.
+   */
   heightAt(x: number, z: number): number {
+    let h = this.rawHeight(x, z);
+    const bumps = (valueNoise(x / 70, z / 70) - 0.5) * 7 + (valueNoise(x / 28, z / 28) - 0.5) * 3;
+    h += bumps * smoothstep(620, 850, h);
     const edgeDist = Math.min(this.half - Math.abs(x), this.half - Math.abs(z));
     const fade = smoothstep(0, EDGE_FADE, edgeDist);
-    return this.baseHeight + (this.rawHeight(x, z) - this.baseHeight) * fade;
+    return this.baseHeight + (h - this.baseHeight) * fade;
   }
 
   /** Steilheit (Höhenunterschied pro Meter). */
@@ -71,83 +80,198 @@ export class Terrain {
   isInside(x: number, z: number): boolean {
     return Math.abs(x) < this.half && Math.abs(z) < this.half;
   }
+}
 
-  buildMesh(resolution = 512): THREE.Group {
-    const n = resolution;
-    const size = this.meta.sizeMeters;
-    const step = size / (n - 1);
-    const positions = new Float32Array(n * n * 3);
-    const colors = new Float32Array(n * n * 3);
+function decodeHeights(buf: ArrayBuffer, meta: TerrainMeta): Float32Array {
+  if (meta.format !== 'int16-decimeter-delta') throw new Error(`Unbekanntes Höhenformat: ${meta.format}`);
+  const g = meta.grid;
+  const deltas = new Int16Array(buf);
+  const dm = new Int32Array(deltas.length);
+  for (let row = 0; row < g; row++) {
+    for (let col = 0; col < g; col++) {
+      const i = row * g + col;
+      const prev = col > 0 ? dm[i - 1] : row > 0 ? dm[i - g] : 0;
+      dm[i] = prev + deltas[i];
+    }
+  }
+  const out = new Float32Array(dm.length);
+  for (let i = 0; i < dm.length; i++) out[i] = dm[i] / 10;
+  return out;
+}
 
-    const meadow = new THREE.Color('#86b85c');
-    const forestFloor = new THREE.Color('#5c9444');
-    const alpine = new THREE.Color('#a7b86e');
-    const rock = new THREE.Color('#8f8b84');
-    const snow = new THREE.Color('#f3f5f7');
-    const c = new THREE.Color();
+// ---------------------------------------------------------------------------
+// Darstellung: Die Landschaft ist in Kacheln (Chunks) aufgeteilt. Kacheln nahe
+// am Flugzeug bekommen ein feines Gitter, weit entfernte ein grobes.
+// ---------------------------------------------------------------------------
 
-    for (let row = 0; row < n; row++) {
-      for (let col = 0; col < n; col++) {
-        const x = -this.half + col * step;
-        const z = -this.half + row * step;
-        const y = this.heightAt(x, z);
-        const i = (row * n + col) * 3;
-        positions[i] = x;
-        positions[i + 1] = y;
-        positions[i + 2] = z;
+const CHUNK_SIZE = 1000;
+/** Gitterabschnitte pro Kachel je Detailstufe (128 = alle 7,8 m ein Punkt) */
+const LEVEL_SEGMENTS = [128, 64, 32, 16, 8];
+/** Bis zu dieser Entfernung (m) wird die jeweilige Detailstufe verwendet */
+const LEVEL_DISTANCE = [1600, 3200, 5500, 9000, Infinity];
 
-        const slope = this.slopeAt(x, z, step);
-        const jitter = (hash2(col, row) - 0.5) * 60; // macht die Farbgrenzen etwas unruhiger
-        const h = y + jitter;
+const COLORS = {
+  meadow: new THREE.Color('#86b85c'),
+  meadowDark: new THREE.Color('#6fa04a'),
+  forestFloor: new THREE.Color('#5c9444'),
+  alpine: new THREE.Color('#a7b86e'),
+  rock: new THREE.Color('#8f8b84'),
+  snow: new THREE.Color('#f3f5f7'),
+};
 
-        if (h < 800) c.copy(meadow).lerp(forestFloor, smoothstep(650, 800, h));
-        else if (h < 1400) c.copy(forestFloor);
-        else c.copy(forestFloor).lerp(alpine, smoothstep(1400, 1550, h));
+interface Chunk {
+  x0: number;
+  z0: number;
+  level: number;
+  mesh?: THREE.Mesh;
+}
 
-        c.lerp(rock, smoothstep(0.65, 1.0, slope + jitter * 0.002));
-        if (h > 1680) c.lerp(snow, smoothstep(1680, 1740, h) * (1 - smoothstep(0.6, 0.9, slope)));
+export class TerrainRenderer {
+  readonly group = new THREE.Group();
+  private chunks: Chunk[] = [];
+  private material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    flatShading: true,
+    roughness: 1,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  private tmpColor = new THREE.Color();
 
-        const shade = 0.94 + hash2(row, col) * 0.12;
-        colors[i] = c.r * shade;
-        colors[i + 1] = c.g * shade;
-        colors[i + 2] = c.b * shade;
+  constructor(private terrain: Terrain) {
+    const n = Math.round(terrain.meta.sizeMeters / CHUNK_SIZE);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        this.chunks.push({ x0: -terrain.half + i * CHUNK_SIZE, z0: -terrain.half + j * CHUNK_SIZE, level: -1 });
       }
     }
 
-    const indices = new Uint32Array((n - 1) * (n - 1) * 6);
-    let k = 0;
-    for (let row = 0; row < n - 1; row++) {
-      for (let col = 0; col < n - 1; col++) {
+    // Flachland außerhalb des Gebiets, damit die Welt nicht im Nichts endet
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(200000, 200000).rotateX(-Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: COLORS.meadow, roughness: 1 }),
+    );
+    ground.position.y = terrain.baseHeight - 0.5;
+    this.group.add(ground);
+  }
+
+  /**
+   * Passt die Detailstufen an die Kameraposition an.
+   * maxBuilds begrenzt, wie viele Kacheln pro Bild neu gebaut werden (gegen Ruckeln).
+   */
+  update(camera: THREE.Vector3, maxBuilds = 2) {
+    const todo: { chunk: Chunk; level: number; dist: number }[] = [];
+    for (const chunk of this.chunks) {
+      const dx = Math.max(chunk.x0 - camera.x, 0, camera.x - (chunk.x0 + CHUNK_SIZE));
+      const dz = Math.max(chunk.z0 - camera.z, 0, camera.z - (chunk.z0 + CHUNK_SIZE));
+      const dist = Math.hypot(dx, dz);
+      const level = LEVEL_DISTANCE.findIndex((d) => dist < d);
+      if (level !== chunk.level) todo.push({ chunk, level, dist });
+    }
+    todo.sort((a, b) => a.dist - b.dist);
+    for (const { chunk, level } of todo.slice(0, maxBuilds)) {
+      const mesh = new THREE.Mesh(this.buildGeometry(chunk, level), this.material);
+      if (chunk.mesh) {
+        this.group.remove(chunk.mesh);
+        chunk.mesh.geometry.dispose();
+      }
+      chunk.mesh = mesh;
+      chunk.level = level;
+      this.group.add(mesh);
+    }
+    return todo.length;
+  }
+
+  /** Baut alle Kacheln sofort (beim Start). */
+  buildAll(camera: THREE.Vector3) {
+    while (this.update(camera, 1000) > 0);
+  }
+
+  private colorAt(x: number, z: number, y: number, slope: number, out: THREE.Color) {
+    const jitter = (hash2(Math.round(x / 9), Math.round(z / 9)) - 0.5) * 50;
+    const patch = valueNoise(x / 180, z / 180);
+    const h = y + jitter + (patch - 0.5) * 80;
+
+    out.copy(COLORS.meadow).lerp(COLORS.meadowDark, smoothstep(0.35, 0.75, patch));
+    out.lerp(COLORS.forestFloor, smoothstep(650, 820, h));
+    if (h > 1380) out.lerp(COLORS.alpine, smoothstep(1380, 1560, h));
+
+    out.lerp(COLORS.rock, smoothstep(0.62, 0.95, slope + jitter * 0.002));
+    if (h > 1680) out.lerp(COLORS.snow, smoothstep(1680, 1740, h) * (1 - smoothstep(0.6, 0.9, slope)));
+
+    const shade = 0.93 + hash2(Math.round(z / 7), Math.round(x / 7)) * 0.14;
+    out.multiplyScalar(shade);
+  }
+
+  private buildGeometry(chunk: Chunk, level: number): THREE.BufferGeometry {
+    const seg = LEVEL_SEGMENTS[level];
+    const n = seg + 1;
+    const step = CHUNK_SIZE / seg;
+    const skirtDepth = step * 1.5 + 4;
+    const t = this.terrain;
+    const c = this.tmpColor;
+
+    const vertCount = n * n + 4 * n;
+    const positions = new Float32Array(vertCount * 3);
+    const colors = new Float32Array(vertCount * 3);
+    const setVertex = (v: number, x: number, y: number, z: number) => {
+      positions[v * 3] = x;
+      positions[v * 3 + 1] = y;
+      positions[v * 3 + 2] = z;
+    };
+
+    for (let row = 0; row < n; row++) {
+      for (let col = 0; col < n; col++) {
+        const x = chunk.x0 + col * step;
+        const z = chunk.z0 + row * step;
+        const y = t.heightAt(x, z);
+        const v = row * n + col;
+        setVertex(v, x, y, z);
+        this.colorAt(x, z, y, t.slopeAt(x, z, Math.max(step, 10)), c);
+        colors[v * 3] = c.r;
+        colors[v * 3 + 1] = c.g;
+        colors[v * 3 + 2] = c.b;
+      }
+    }
+
+    // "Schürzen": senkrechte Streifen an den Kachelrändern, damit zwischen
+    // Kacheln mit unterschiedlicher Detailstufe keine Lücken zu sehen sind.
+    const edges = [
+      (k: number) => k, // Norden
+      (k: number) => (n - 1) * n + k, // Süden
+      (k: number) => k * n, // Westen
+      (k: number) => k * n + (n - 1), // Osten
+    ];
+    const indices: number[] = [];
+    edges.forEach((edge, e) => {
+      const baseV = n * n + e * n;
+      for (let k = 0; k < n; k++) {
+        const src = edge(k);
+        setVertex(baseV + k, positions[src * 3], positions[src * 3 + 1] - skirtDepth, positions[src * 3 + 2]);
+        colors.copyWithin((baseV + k) * 3, src * 3, src * 3 + 3);
+        if (k < n - 1) {
+          const a = src;
+          const b = edge(k + 1);
+          indices.push(a, baseV + k, b, b, baseV + k, baseV + k + 1);
+        }
+      }
+    });
+
+    for (let row = 0; row < seg; row++) {
+      for (let col = 0; col < seg; col++) {
         const a = row * n + col;
         const b = a + 1;
         const d = a + n;
         const e = d + 1;
-        indices[k++] = a;
-        indices[k++] = d;
-        indices[k++] = b;
-        indices[k++] = b;
-        indices[k++] = d;
-        indices[k++] = e;
+        indices.push(a, d, b, b, d, e);
       }
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.setIndex(indices);
     geo.computeVertexNormals();
-
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, metalness: 0 });
-    const group = new THREE.Group();
-    group.add(new THREE.Mesh(geo, mat));
-
-    // Flachland außerhalb des Gebiets, damit die Welt nicht im Nichts endet
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(200000, 200000).rotateX(-Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: meadow, roughness: 1 }),
-    );
-    ground.position.y = this.baseHeight - 0.5;
-    group.add(ground);
-    return group;
+    return geo;
   }
 }
