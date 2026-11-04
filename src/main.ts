@@ -155,7 +155,7 @@ function updateCamera(dt: number) {
 const prevPos = new THREE.Vector3();
 
 function handleCoins() {
-  const radius = 9 + plane.speed * 0.03;
+  const radius = 16 + plane.speed * 0.03;
   const hits = coins.collect(prevPos, plane.position, radius);
   if (hits.length === 0) return;
   const points = hits.reduce((sum, c) => sum + c.value, 0);
