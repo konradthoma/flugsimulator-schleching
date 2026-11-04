@@ -45,7 +45,14 @@ export class TouchControls {
     );
     // Verhindert Zoomen und Scrollen der Seite durch Gesten
     document.addEventListener('gesturestart', (e) => e.preventDefault());
-    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    // (im Menü darf aber gescrollt werden)
+    document.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!(e.target instanceof Element && e.target.closest('#menu'))) e.preventDefault();
+      },
+      { passive: false },
+    );
   }
 
   private setupStick(stick: HTMLElement, knob: HTMLElement) {
