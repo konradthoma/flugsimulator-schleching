@@ -1,0 +1,12 @@
+{
+  "name": "Schleching / Chiemgau",
+  "center": {
+    "lat": 47.7225,
+    "lon": 12.3936
+  },
+  "sizeMeters": 20000,
+  "grid": 1024,
+  "minHeight": 521,
+  "maxHeight": 1765,
+  "source": "AWS Terrain Tiles (Terrarium), Mapzen / Copernicus / SRTM u.a."
+}
