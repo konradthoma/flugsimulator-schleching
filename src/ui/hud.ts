@@ -9,7 +9,22 @@ export interface HudData {
   heading: number; // Grad
   throttle: number; // 0..1
   stalled: boolean;
+  verticalSpeed: number; // m/s
+  onGround: boolean;
 }
+
+const KEYS_PLANE = `
+  <kbd>W</kbd>/<kbd>S</kbd> Gas geben/wegnehmen<br />
+  <kbd>↑</kbd>/<kbd>↓</kbd> Nase runter/hoch<br />
+  <kbd>←</kbd>/<kbd>→</kbd> nach links/rechts kippen<br />
+  <kbd>A</kbd>/<kbd>D</kbd> Seitenruder (am Boden: lenken)<br />
+  <kbd>I</kbd> Höhenruder umkehren: <span class="opt-invert">aus</span><br />`;
+
+const KEYS_HELI = `
+  <kbd>W</kbd>/<kbd>S</kbd> steigen/sinken<br />
+  <kbd>↑</kbd>/<kbd>↓</kbd> vorwärts/rückwärts<br />
+  <kbd>←</kbd>/<kbd>→</kbd> nach links/rechts drehen<br />
+  <kbd>A</kbd>/<kbd>D</kbd> seitwärts fliegen<br />`;
 
 /** Die Anzeige über dem Spielbild. */
 export class Hud {
@@ -21,8 +36,8 @@ export class Hud {
   private place = $('hud-place');
   private message = $('hud-message');
   private controls = $('controls');
-  private invert = $('hud-invert');
-  private assist = $('hud-assist');
+  private vs = $('hud-vs');
+  private throttleLabel = $('hud-throttle-label');
 
   show() {
     $('loading').remove();
@@ -37,6 +52,20 @@ export class Hud {
     this.heading.textContent = `${DIRECTIONS[Math.round(d.heading / 45) % 8]} ${Math.round(d.heading)}°`;
     this.throttle.style.width = `${Math.round(d.throttle * 100)}%`;
     this.speed.style.color = d.stalled ? '#ff6b5b' : '';
+    const vs = Math.round(d.verticalSpeed * 10) / 10;
+    this.vs.textContent = d.onGround ? 'am Boden' : `${vs > 0 ? '▲ ' : vs < 0 ? '▼ ' : ''}${Math.abs(vs).toFixed(1)} m/s`;
+  }
+
+  /** Steuerungshilfe und Beschriftungen passend zum Fluggerät. */
+  setVehicleKind(kind: 'plane' | 'heli') {
+    this.throttleLabel.textContent = kind === 'heli' ? 'Rotor' : 'Gas';
+    this.controls.innerHTML = `<b>Steuerung</b> <small>(K zum Ein-/Ausblenden)</small><br />
+      ${kind === 'heli' ? KEYS_HELI : KEYS_PLANE}
+      <kbd>C</kbd> Kamera wechseln<br />
+      <kbd>H</kbd> Flughilfe: <span class="opt-assist">an</span><br />
+      <kbd>P</kbd> Pause<br />
+      <kbd>Leertaste</kbd> Neustart<br />
+      <kbd>M</kbd> Menü und Hangar`;
   }
 
   private score = $('score');
@@ -77,7 +106,7 @@ export class Hud {
     this.popupEl.textContent = text;
     this.popupEl.classList.add('show');
     window.clearTimeout(this.popupTimer);
-    this.popupTimer = window.setTimeout(() => this.popupEl.classList.remove('show'), 350);
+    this.popupTimer = window.setTimeout(() => this.popupEl.classList.remove('show'), text.length > 6 ? 1200 : 350);
   }
 
   setPlace(text: string) {
@@ -93,7 +122,9 @@ export class Hud {
   }
 
   setOptions(invert: boolean, assist: boolean) {
-    this.invert.textContent = invert ? 'an' : 'aus';
-    this.assist.textContent = assist ? 'an' : 'aus';
+    const i = this.controls.querySelector('.opt-invert');
+    const a = this.controls.querySelector('.opt-assist');
+    if (i) i.textContent = invert ? 'an' : 'aus';
+    if (a) a.textContent = assist ? 'an' : 'aus';
   }
 }

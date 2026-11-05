@@ -25,10 +25,11 @@ export class TouchControls {
     root.id = 'touch';
     root.innerHTML = `
       <div class="stick"><div class="knob"></div></div>
-      <div class="throttle-slider"><div class="fill"></div><span>Gas</span></div>
+      <div class="throttle-slider"><div class="fill"></div><div class="mid"></div><span>Gas</span></div>
       <div class="buttons">
         <button data-action="camera">📷</button>
         <button data-action="assist">Hilfe</button>
+        <button data-action="pause">⏸</button>
         <button data-action="restart">↻</button>
         <button data-action="menu">✈</button>
       </div>`;
@@ -112,11 +113,19 @@ export class TouchControls {
     return t;
   }
 
+  /** Hubschrauber: Regler heißt "Rotor", die Mitte (schweben) ist markiert. */
+  setVehicleKind(kind: 'plane' | 'heli') {
+    const slider = document.querySelector('.throttle-slider');
+    if (!slider) return;
+    slider.classList.toggle('heli', kind === 'heli');
+    slider.querySelector('span')!.textContent = kind === 'heli' ? 'Rotor' : 'Gas';
+  }
+
   showThrottle(value: number) {
     if (this.throttleFill) this.throttleFill.style.height = `${Math.round(value * 100)}%`;
   }
 
-  wasPressed(action: 'camera' | 'assist' | 'restart' | 'menu'): boolean {
+  wasPressed(action: 'camera' | 'assist' | 'restart' | 'menu' | 'pause'): boolean {
     return this.pressed.has(action);
   }
 

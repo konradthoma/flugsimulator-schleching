@@ -2,12 +2,17 @@ import * as THREE from 'three';
 import { Terrain, TerrainRenderer } from './world/terrain';
 import { createSky } from './world/sky';
 import { createForest, createVillage } from './world/decor';
-import { getPlane, PlaneModel, PlaneStats } from './vehicles/plane';
-import { PlanePhysics } from './physics/planePhysics';
+import { Airfield } from './world/airfield';
+import { geoToWorld } from './world/places';
+import { Explosion, Shadow, Wind } from './world/effects';
+import { createPhysics, getVehicle, VehicleStats, withTurbo } from './vehicles';
+import { paintGold, VehicleModel, VehiclePhysics } from './vehicles/vehicle';
+import { HeliPhysics } from './physics/heliPhysics';
 import { CoinField } from './game/coins';
 import { Race } from './game/race';
 import { Traffic } from './game/traffic';
-import { formatTime, GameMode, loadSave, writeSave } from './game/save';
+import { Mission, Missions } from './game/missions';
+import { addHighscore, formatTime, GameMode, loadSave, writeSave } from './game/save';
 import { Sound } from './game/sound';
 import { Input } from './input';
 import { Hud } from './ui/hud';
@@ -30,29 +35,34 @@ window.addEventListener('resize', () => {
 
 const START = new THREE.Vector3(0, 0, 3000); // südlich von Schleching, Blick nach Norden
 
-const skyDome = createSky(scene);
+const sky = createSky(scene);
 const terrain = await Terrain.load('schleching');
 const terrainRenderer = new TerrainRenderer(terrain);
 terrainRenderer.buildAll(START);
 scene.add(terrainRenderer.group);
-scene.add(createForest(terrain));
-scene.add(createVillage(terrain));
+const airfield = new Airfield(terrain);
+scene.add(airfield.group);
+const missions = new Missions(terrain, airfield);
+scene.add(missions.group, missions.decor);
+scene.add(createForest(terrain, (x, z) => airfield.blocks(x, z) || missions.blocks(x, z)));
+scene.add(createVillage(terrain, (x, z) => airfield.blocks(x, z)));
 const coins = new CoinField(terrain);
 scene.add(coins.group);
 const race = new Race(terrain);
 scene.add(race.group);
 const traffic = new Traffic(terrain);
 scene.add(traffic.group);
+const shadow = new Shadow();
+scene.add(shadow.mesh);
+const explosion = new Explosion();
+scene.add(explosion.group);
+const wind = new Wind();
 
 // ---------- Orte ----------
-const M_PER_DEG_LAT = 111319.5;
-function geoToWorld(lat: number, lon: number) {
-  const mPerDegLon = M_PER_DEG_LAT * Math.cos((terrain.meta.center.lat * Math.PI) / 180);
-  return new THREE.Vector2((lon - terrain.meta.center.lon) * mPerDegLon, (terrain.meta.center.lat - lat) * M_PER_DEG_LAT);
-}
 const PLACES = [
-  { name: 'Schleching', pos: geoToWorld(47.7225, 12.3936), radius: 1200 },
-  { name: 'Geigelstein (1808 m)', pos: geoToWorld(47.7073, 12.3345), radius: 1500 },
+  { name: 'Flugplatz', pos: new THREE.Vector2(airfield.center.x, airfield.center.z), radius: 450 },
+  { name: 'Schleching', pos: geoToWorld(terrain, 47.7225, 12.3936), radius: 1200 },
+  { name: 'Geigelstein (1808 m)', pos: geoToWorld(terrain, 47.7073, 12.3345), radius: 1500 },
 ];
 
 // ---------- Spielzustand ----------
@@ -61,27 +71,39 @@ const input = new Input();
 const touch = new TouchControls();
 const sound = new Sound();
 const hud = new Hud();
-const menu = new PlaneMenu(save, applySettings);
+const menu = new PlaneMenu(save, missions.list, applySettings);
 hud.show();
 
 type State = 'menu' | 'flying' | 'crashed' | 'finished';
 let state: State = 'menu';
 let mode: GameMode = save.mode;
+let mission: Mission | null = null;
 let cameraMode: 'chase' | 'cockpit' = 'chase';
 let invertPitch = false;
 let assist = true;
+let paused = false;
+let pauseShown = false;
+let hintShown = false;
 let outsideTime = 0;
 let flightScore = 0;
+let wasOnGround = false;
 
-const plane = new PlanePhysics(getPlane(save.plane));
-let planeModel: PlaneModel = plane.stats.build();
-scene.add(planeModel.model);
+let stats: VehicleStats = getVehicle(save.plane);
+let vehicle: VehiclePhysics = createPhysics(stats);
+let model: VehicleModel = stats.build();
+scene.add(model.model);
 
-function setPlane(stats: PlaneStats) {
-  scene.remove(planeModel.model);
-  planeModel = stats.build();
-  scene.add(planeModel.model);
-  plane.stats = stats;
+/** Fluggerät wechseln (mit Extras aus dem Hangar). */
+function setVehicle(base: VehicleStats) {
+  scene.remove(model.model);
+  stats = save.upgrades.turbo ? withTurbo(base) : base;
+  vehicle = createPhysics(stats);
+  if (vehicle instanceof HeliPhysics) vehicle.autoCenter = !touch.enabled;
+  model = base.build();
+  if (save.upgrades.gold) paintGold(model.model);
+  scene.add(model.model);
+  hud.setVehicleKind(stats.kind);
+  touch.setVehicleKind(stats.kind);
 }
 
 /** Einstellungen aus dem Menü übernehmen. */
@@ -90,20 +112,24 @@ function applySettings() {
   traffic.visible = s.traffic;
   coins.beaconsVisible = s.beacons;
   sound.enabled = s.sound;
+  sound.engineEnabled = s.engine;
+  sky.setEvening(s.evening);
   if (!s.pointer) hud.setCoinPointer(null);
   writeSave(save);
 }
 
 function openMenu() {
   state = 'menu';
+  paused = false;
   hud.setMessage('');
   hud.setWarning(null);
-  menu.show((stats, chosenMode) => {
-    setPlane(stats);
+  menu.show((chosen, chosenMode, chosenMission) => {
     mode = chosenMode;
-    save.plane = stats.id;
+    mission = chosenMission;
+    save.plane = chosen.id;
     save.mode = chosenMode;
     writeSave(save);
+    setVehicle(chosen);
     startFlight();
   });
 }
@@ -111,39 +137,68 @@ function openMenu() {
 function startFlight() {
   coins.group.visible = mode === 'coins';
   race.group.visible = mode === 'race';
-  if (mode === 'race') {
-    race.reset();
-    plane.reset(race.startPosition, race.startHeading, plane.stats.stallSpeed * 1.8);
+  const airSpeed = stats.kind === 'plane' ? stats.stallSpeed * 1.8 : 15;
+  const onGroundAt = (p: THREE.Vector3, heading: number) =>
+    vehicle.reset(new THREE.Vector3(p.x, terrain.heightAt(p.x, p.z), p.z), heading, 0, true);
+
+  if (mode === 'missions' && mission) {
+    missions.begin(mission);
+    const st = mission.start;
+    if (st.onGround) onGroundAt(st.position, st.heading);
+    else vehicle.reset(st.position, st.heading, airSpeed);
   } else {
-    const y = Math.max(terrain.heightAt(START.x, START.z) + 450, 1100);
-    plane.reset(new THREE.Vector3(START.x, y, START.z), 0, plane.stats.stallSpeed * 1.8);
-    coins.reset();
+    missions.stop();
+    if (mode === 'race') {
+      race.reset();
+      vehicle.reset(race.startPosition, race.startHeading, airSpeed);
+    } else if (mode === 'free') {
+      if (stats.kind === 'heli') onGroundAt(airfield.helipad, airfield.heading);
+      else onGroundAt(airfield.threshold, airfield.heading);
+    } else {
+      const y = Math.max(terrain.heightAt(START.x, START.z) + 450, 1100);
+      vehicle.reset(new THREE.Vector3(START.x, y, START.z), 0, airSpeed);
+      coins.reset();
+    }
   }
   flightScore = 0;
   state = 'flying';
+  paused = false;
   outsideTime = 0;
-  planeModel.model.visible = cameraMode === 'chase';
-  hud.setMessage('');
+  wasOnGround = vehicle.onGround;
+  model.model.visible = cameraMode === 'chase';
+  hintShown = vehicle.onGround;
+  hud.setMessage(hintShown ? startHint() : '');
   hud.setWarning(null);
+  syncModel(0);
   snapCamera();
+}
+
+function startHint() {
+  if (stats.kind === 'heli') return touch.enabled ? 'Schieb den Rotor-Regler über die Mitte zum Abheben' : 'Halte W zum Abheben';
+  return touch.enabled ? 'Gas ganz hoch, dann ab ca. ' + Math.round(stats.stallSpeed * 3.6) + ' km/h Knüppel zu dir ziehen' : `W = Gas geben, ab ca. ${Math.round(stats.stallSpeed * 3.6)} km/h mit ↓ abheben`;
 }
 
 const againText = () => (touch.enabled ? 'Tippe auf ↻ für einen neuen Flug · ✈ für das Menü' : 'Leertaste: neuer Flug · M: Menü');
 
 function crash(reason: string) {
+  const wasFinished = state === 'finished';
   state = 'crashed';
-  planeModel.model.visible = false;
+  model.model.visible = false;
+  explosion.trigger(vehicle.position);
   hud.setWarning(null);
   sound.crash();
-  if (mode === 'race') {
-    hud.setMessage(`💥 ${reason}\nRennen nicht geschafft\n${againText()}`);
+  if (mode === 'race' || mode === 'missions') {
+    hud.setMessage(`💥 ${reason}\n${wasFinished ? '' : mode === 'race' ? 'Rennen nicht geschafft' : 'Mission nicht geschafft'}\n${againText()}`);
+    return;
+  }
+  if (mode === 'free') {
+    hud.setMessage(`💥 ${reason}\n${againText()}`);
     return;
   }
   const record = flightScore > save.bestFlight;
-  if (record) {
-    save.bestFlight = flightScore;
-    writeSave(save);
-  }
+  if (record) save.bestFlight = flightScore;
+  if (flightScore > 0) addHighscore(save.highscores.coins, flightScore, stats.name, false);
+  writeSave(save);
   const points = `${flightScore} ${flightScore === 1 ? 'Punkt' : 'Punkte'} in diesem Flug${record ? ' – neuer Rekord! 🏆' : ''}`;
   hud.setMessage(`💥 ${reason}\n${points}\n${againText()}`);
 }
@@ -155,23 +210,25 @@ const fwd = new THREE.Vector3();
 const tmp = new THREE.Vector3();
 
 function chaseTarget(out: THREE.Vector3) {
-  plane.getForward(fwd);
-  out.copy(plane.position).addScaledVector(fwd, -plane.stats.cameraDistance);
-  out.y += plane.stats.cameraDistance * 0.3;
+  vehicle.getCameraForward(fwd);
+  out.copy(vehicle.position).addScaledVector(fwd, -stats.cameraDistance);
+  out.y += stats.cameraDistance * 0.3;
   return out;
 }
 
 function snapCamera() {
   chaseTarget(camPos);
+  camPos.y = Math.max(camPos.y, terrain.heightAt(camPos.x, camPos.z) + 3);
   camera.position.copy(camPos);
-  camLook.copy(plane.position);
+  camLook.copy(vehicle.position);
   camera.lookAt(camLook);
 }
 
 function updateCamera(dt: number) {
-  if (cameraMode === 'cockpit') {
-    camera.position.copy(plane.position).add(tmp.set(0, 1.0, -0.6).applyQuaternion(plane.quaternion));
-    camera.quaternion.copy(plane.quaternion);
+  if (cameraMode === 'cockpit' && state !== 'crashed') {
+    const offset = stats.kind === 'heli' ? tmp.set(0, 0.5, -1.4) : tmp.set(0, 1.0, -0.6);
+    camera.position.copy(vehicle.position).add(offset.applyQuaternion(vehicle.quaternion));
+    camera.quaternion.copy(vehicle.quaternion);
     return;
   }
   const k = 1 - Math.exp(-dt * 4);
@@ -180,30 +237,30 @@ function updateCamera(dt: number) {
   const minY = terrain.heightAt(camPos.x, camPos.z) + 3;
   if (camPos.y < minY) camPos.y = minY;
   camera.position.copy(camPos);
-  plane.getForward(fwd);
-  camLook.lerp(tmp.copy(plane.position).addScaledVector(fwd, 15), 1 - Math.exp(-dt * 8));
+  vehicle.getCameraForward(fwd);
+  camLook.lerp(tmp.copy(vehicle.position).addScaledVector(fwd, 15), 1 - Math.exp(-dt * 8));
   camera.up.set(0, 1, 0);
   camera.lookAt(camLook);
 }
 
 /** Winkel zu einem Ziel relativ zur Flugrichtung (0 = geradeaus, 90 = rechts). */
 function relativeBearing(target: THREE.Vector3) {
-  const bearing = THREE.MathUtils.radToDeg(Math.atan2(target.x - plane.position.x, -(target.z - plane.position.z)));
-  return ((bearing - plane.headingDeg + 540) % 360) - 180;
+  const bearing = THREE.MathUtils.radToDeg(Math.atan2(target.x - vehicle.position.x, -(target.z - vehicle.position.z)));
+  return ((bearing - vehicle.headingDeg + 540) % 360) - 180;
 }
 
 function pointTo(target: THREE.Vector3 | undefined) {
   if (!target || !save.settings.pointer) return hud.setCoinPointer(null);
-  const dist = Math.hypot(target.x - plane.position.x, target.z - plane.position.z);
-  hud.setCoinPointer(relativeBearing(target), dist, target.y - plane.position.y);
+  const dist = Math.hypot(target.x - vehicle.position.x, target.z - vehicle.position.z);
+  hud.setCoinPointer(relativeBearing(target), dist, target.y - vehicle.position.y);
 }
 
 // ---------- Münzen ----------
 const prevPos = new THREE.Vector3();
 
 function handleCoins() {
-  const radius = 16 + plane.speed * 0.03;
-  const hits = coins.collect(prevPos, plane.position, radius);
+  const radius = (16 + vehicle.speed * 0.03) * (save.upgrades.magnet ? 1.8 : 1);
+  const hits = coins.collect(prevPos, vehicle.position, radius);
   if (hits.length > 0) {
     const points = hits.reduce((sum, c) => sum + c.value, 0);
     flightScore += points;
@@ -223,7 +280,7 @@ function handleCoins() {
     writeSave(save);
   }
   hud.setTopInfo(`🪙 ${flightScore}`, `Gesamt ${save.coins} · noch ${coins.remaining} Münzen`);
-  pointTo(coins.nearest(plane.position)?.position);
+  pointTo(coins.nearest(vehicle.position)?.position);
 }
 
 // ---------- Ringrennen ----------
@@ -231,7 +288,7 @@ const RACE_REWARD = 10;
 const RECORD_REWARD = 20;
 
 function handleRace(dt: number) {
-  const event = race.update(dt, prevPos, plane.position);
+  const event = race.update(dt, prevPos, vehicle.position);
   if (event?.type === 'start') {
     sound.coin();
     hud.popup('Los! ⏱');
@@ -239,46 +296,97 @@ function handleRace(dt: number) {
     sound.coin();
     hud.popup(`${event.index + 1}/${race.total}`);
   } else if (event?.type === 'finish') {
-    const best = save.bestTimes[plane.stats.id];
+    const best = save.bestTimes[stats.id];
     const record = !best || event.time < best;
     const reward = RACE_REWARD + (record ? RECORD_REWARD : 0);
-    if (record) save.bestTimes[plane.stats.id] = event.time;
+    if (record) save.bestTimes[stats.id] = event.time;
+    const place = addHighscore(save.highscores.race, event.time, stats.name, true);
     save.coins += reward;
     writeSave(save);
     sound.allCollected();
     state = 'finished';
     const bestLine = record ? 'Neue Bestzeit! 🏆' : `Bestzeit: ${formatTime(best!)}`;
-    hud.setMessage(`🏁 Ziel! ${formatTime(event.time)}\n${bestLine}\n+${reward} Punkte\n${againText()}`);
+    const placeLine = place > 0 ? ` · Platz ${place} in der Bestenliste` : '';
+    hud.setMessage(`🏁 Ziel! ${formatTime(event.time)}\n${bestLine}${placeLine}\n+${reward} Punkte\n${againText()}`);
   }
 
-  const best = save.bestTimes[plane.stats.id];
+  const best = save.bestTimes[stats.id];
   const timeText = race.running || race.finished ? formatTime(race.elapsed) : '0:00.0';
   const ringText = race.finished ? 'Geschafft!' : race.nextIndex === 0 ? 'Flieg durch den grünen Startring' : `Ring ${race.nextIndex + 1} von ${race.total}`;
   hud.setTopInfo(`⏱ ${timeText}`, `${ringText}${best ? ` · Bestzeit ${formatTime(best)}` : ''}`);
   pointTo(race.nextRing?.center);
 }
 
+// ---------- Missionen ----------
+function handleMission(dt: number, agl: number) {
+  const m = mission;
+  if (!m) return;
+  const event = state === 'flying' ? missions.update(dt, prevPos, vehicle, agl) : null;
+  if (event?.type === 'step') {
+    sound.success();
+    hud.popup(event.text);
+  } else if (event?.type === 'done') {
+    const first = !(m.id in save.missions);
+    const reward = first ? m.reward : Math.max(5, Math.round(m.reward / 4));
+    const best = save.missions[m.id];
+    const record = best === undefined || event.time < best;
+    if (record) save.missions[m.id] = event.time;
+    save.coins += reward;
+    writeSave(save);
+    sound.allCollected();
+    state = 'finished';
+    hud.setMessage(
+      `🎯 ${m.name} geschafft!\nZeit ${formatTime(event.time)}${record && !first ? ' – neue Bestzeit! 🏆' : ''}\n+${reward} Punkte${first ? ' (erstes Mal!)' : ''}\n${againText()}`,
+    );
+  } else if (event?.type === 'fail') {
+    state = 'finished';
+    sound.fail();
+    hud.setMessage(`❌ ${event.reason}\nMission nicht geschafft\n${againText()}`);
+  }
+  const done = state === 'finished';
+  hud.setTopInfo(`🎯 ${formatTime(missions.elapsed)}`, done ? m.name : missions.statusText(agl));
+  pointTo(done ? undefined : missions.target);
+}
+
 // ---------- Verkehr ----------
 function handleTraffic() {
-  if (traffic.collides(prevPos, plane.position)) {
+  if (traffic.collides(prevPos, vehicle.position)) {
     crash('Zusammenstoß mit einem anderen Flugzeug!');
     return;
   }
-  const threat = traffic.nearbyThreat(plane.position);
+  const threat = traffic.nearbyThreat(vehicle.position);
   if (!threat) return hud.setWarning(null);
   const rel = relativeBearing(threat.position);
   const where = Math.abs(rel) < 35 ? 'vor dir' : Math.abs(rel) > 145 ? 'hinter dir' : rel > 0 ? 'rechts' : 'links';
-  const dy = threat.position.y - plane.position.y;
+  const dy = threat.position.y - vehicle.position.y;
   const height = dy > 30 ? ', über dir' : dy < -30 ? ', unter dir' : ', auf deiner Höhe';
   hud.setWarning(`⚠ Flugzeug ${where}${height} – ${Math.round(threat.distance)} m`);
 }
 
+// ---------- Modell ----------
+function syncModel(dt: number) {
+  model.model.position.copy(vehicle.position);
+  model.model.quaternion.copy(vehicle.quaternion);
+  if (model.propeller) model.propeller.rotation.z += dt * (20 + vehicle.throttle * 60);
+  if (model.flame) model.flame.scale.set(1, 1, 0.2 + vehicle.throttle * (0.9 + Math.random() * 0.25));
+  if (model.rotor) model.rotor.rotation.y -= dt * (vehicle.onGround && vehicle.throttle < 0.4 ? 9 + vehicle.throttle * 30 : 26);
+  if (model.tailRotor) model.tailRotor.rotation.x += dt * 45;
+}
+
 // ---------- Spielschleife ----------
 const clock = new THREE.Clock();
-plane.reset(new THREE.Vector3(START.x, 1100, START.z), 0, 0);
+setVehicle(stats);
+vehicle.reset(new THREE.Vector3(START.x, 1100, START.z), 0, 0);
 snapCamera();
 applySettings();
 openMenu();
+
+const groundAt = (x: number, z: number) => terrain.heightAt(x, z);
+const slopeAt = (x: number, z: number) => terrain.slopeAt(x, z, 8);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state === 'flying') paused = true;
+});
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -286,42 +394,76 @@ function frame() {
   if (state !== 'menu' && !menu.visible) {
     if (input.wasPressed('KeyC') || touch.wasPressed('camera')) {
       cameraMode = cameraMode === 'chase' ? 'cockpit' : 'chase';
-      planeModel.model.visible = cameraMode === 'chase' && state !== 'crashed';
+      model.model.visible = cameraMode === 'chase' && state !== 'crashed';
       if (cameraMode === 'chase') snapCamera();
     }
     if (input.wasPressed('KeyK')) hud.toggleControls();
     if (input.wasPressed('KeyI')) invertPitch = !invertPitch;
     if (input.wasPressed('KeyH') || touch.wasPressed('assist')) assist = !assist;
+    if (input.wasPressed('KeyP') || input.wasPressed('Escape') || touch.wasPressed('pause')) paused = !paused;
     if (input.wasPressed('Space') || touch.wasPressed('restart')) startFlight();
     if (input.wasPressed('KeyM') || touch.wasPressed('menu')) openMenu();
   }
   hud.setOptions(invertPitch, assist);
+  const pauseText = '⏸ Pause\n' + (touch.enabled ? 'Tippe auf ⏸ zum Weiterfliegen' : 'P zum Weiterfliegen');
+  if (paused && state !== 'menu') {
+    hud.setMessage(pauseText);
+    pauseShown = true;
+  } else if (pauseShown) {
+    hud.setMessage('');
+    pauseShown = false;
+  }
 
-  if (state === 'flying' || state === 'finished') {
+  const active = (state === 'flying' || state === 'finished') && !paused;
+  if (active) {
     const newThrottle = touch.takeThrottle();
-    if (newThrottle !== null) plane.throttle = newThrottle;
+    if (newThrottle !== null) vehicle.throttle = newThrottle;
     const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
-    prevPos.copy(plane.position);
-    plane.update(dt, {
-      throttle: input.axis('KeyS', 'KeyW'),
-      pitch: clampAxis(input.axis('ArrowUp', 'ArrowDown') + touch.pitch) * (invertPitch ? -1 : 1),
-      roll: clampAxis(input.axis('ArrowLeft', 'ArrowRight') + touch.roll),
-      yaw: input.axis('KeyA', 'KeyD'),
-      assist,
-    });
+    prevPos.copy(vehicle.position);
+    wind.update(dt, save.settings.wind);
+    const reason = vehicle.update(
+      dt,
+      {
+        throttle: input.axis('KeyS', 'KeyW'),
+        pitch: clampAxis(input.axis('ArrowUp', 'ArrowDown') + touch.pitch) * (invertPitch && stats.kind === 'plane' ? -1 : 1),
+        roll: clampAxis(input.axis('ArrowLeft', 'ArrowRight') + touch.roll),
+        yaw: input.axis('KeyA', 'KeyD'),
+        assist,
+      },
+      groundAt,
+      slopeAt,
+    );
+    if (!vehicle.onGround) vehicle.position.addScaledVector(wind.velocity, dt);
+    if (reason) crash(reason);
 
-    if (mode === 'coins') handleCoins();
-    else handleRace(dt);
-    handleTraffic();
+    const ground = terrain.heightAt(vehicle.position.x, vehicle.position.z);
+    const agl = vehicle.position.y - ground;
 
-    const ground = terrain.heightAt(plane.position.x, plane.position.z);
-    if ((state as State) !== 'crashed' && plane.position.y < ground + 1.2) {
-      plane.position.y = ground + 1.2;
-      crash('Abgestürzt!');
+    if ((state as State) !== 'crashed') {
+      if (hintShown && !vehicle.onGround) {
+        hintShown = false;
+        hud.setMessage('');
+      }
+      // Landung erkannt
+      if (vehicle.onGround && !wasOnGround && state === 'flying') {
+        sound.success();
+        hud.popup('Gelandet ✓');
+      }
+      wasOnGround = vehicle.onGround;
+
+      if (mode === 'coins') handleCoins();
+      else if (mode === 'race') handleRace(dt);
+      else if (mode === 'missions') handleMission(dt, agl);
+      else {
+        const d = Math.hypot(vehicle.position.x - airfield.center.x, vehicle.position.z - airfield.center.z);
+        hud.setTopInfo('🕊 Freiflug', d > 600 ? 'Der Pfeil zeigt zum Flugplatz' : 'Flugplatz Schleching');
+        pointTo(d > 600 ? airfield.center : undefined);
+      }
+      if ((state as State) !== 'crashed') handleTraffic();
     }
 
     // Gebietsgrenze
-    const margin = Math.max(Math.abs(plane.position.x), Math.abs(plane.position.z)) - terrain.half;
+    const margin = Math.max(Math.abs(vehicle.position.x), Math.abs(vehicle.position.z)) - terrain.half;
     if (state === 'flying') {
       if (margin > 500) {
         outsideTime += dt;
@@ -333,30 +475,36 @@ function frame() {
       }
     }
 
-    planeModel.model.position.copy(plane.position);
-    planeModel.model.quaternion.copy(plane.quaternion);
-    if (planeModel.propeller) planeModel.propeller.rotation.z += dt * (20 + plane.throttle * 60);
-    if (planeModel.flame) planeModel.flame.scale.set(1, 1, 0.2 + plane.throttle * (0.9 + Math.random() * 0.25));
+    syncModel(dt);
+    shadow.update(vehicle.position.x, vehicle.position.z, ground, agl, stats.size, (state as State) !== 'crashed');
 
-    const here = new THREE.Vector2(plane.position.x, plane.position.z);
+    const here = new THREE.Vector2(vehicle.position.x, vehicle.position.z);
     hud.setPlace(PLACES.find((p) => p.pos.distanceTo(here) < p.radius)?.name ?? '');
     hud.update({
-      speed: plane.speed,
-      altitude: plane.position.y,
-      aboveGround: plane.position.y - ground,
-      heading: plane.headingDeg,
-      throttle: plane.throttle,
-      stalled: plane.stalled,
+      speed: vehicle.speed,
+      altitude: vehicle.position.y,
+      aboveGround: agl,
+      heading: vehicle.headingDeg,
+      throttle: vehicle.throttle,
+      stalled: vehicle.stalled,
+      verticalSpeed: vehicle.verticalSpeed,
+      onGround: vehicle.onGround,
     });
   }
 
-  if (mode === 'coins') coins.update(dt);
-  traffic.update(dt);
+  const engineKind = stats.kind === 'heli' ? 'heli' : model.flame ? 'jet' : 'prop';
+  sound.engine(engineKind, vehicle.throttle, vehicle.speed, active && state !== 'crashed');
+
+  if (!paused) {
+    if (mode === 'coins') coins.update(dt);
+    traffic.update(dt);
+    explosion.update(dt);
+  }
   updateCamera(dt);
   terrainRenderer.update(camera.position);
-  skyDome.position.copy(camera.position);
+  sky.dome.position.copy(camera.position);
   renderer.render(scene, camera);
-  touch.showThrottle(plane.throttle);
+  touch.showThrottle(vehicle.throttle);
   input.endFrame();
   touch.endFrame();
   requestAnimationFrame(frame);
@@ -365,7 +513,9 @@ requestAnimationFrame(frame);
 
 // Zum Testen in der Browser-Konsole
 (window as unknown as Record<string, unknown>).game = {
-  plane, camera, scene, terrain, coins, race, traffic, save,
-  get model() { return planeModel; },
+  camera, scene, terrain, coins, race, traffic, save, airfield, missions,
+  get vehicle() { return vehicle; },
+  get model() { return model; },
   get state() { return state; },
+  get stats() { return stats; },
 };

@@ -1,37 +1,56 @@
 # Flugsimulator Schleching
 
-Ein Flugspiel im Browser: Flieg mit einem kleinen Propellerflugzeug durch die echte
+Ein Flugspiel im Browser: Flieg mit Flugzeugen und Hubschraubern durch die echte
 Berglandschaft rund um Schleching im Chiemgau.
 
 **Spielen:** https://konradthoma.github.io/flugsimulator-schleching/
 
 ## So geht's
 
-Wähle im Menü ein Spiel und ein Flugzeug (Piccolo, Falke oder Blitz):
+Das Menü hat vier Reiter: **Spielen**, **Hangar**, **Rekorde** und **Einstellungen**.
+
+Spiele:
 
 - **Münzen sammeln:** Goldene Münzen geben 1 Punkt, blaue Münzen über den Gipfeln 5 Punkte.
-  Lichtsäulen zeigen, wo Münzreihen liegen. Alle Münzen geschafft = 50 Bonuspunkte.
-- **Ringrennen:** Flieg durch 16 Ringe in der richtigen Reihenfolge. Die Zeit startet am grünen
-  Ring und stoppt am weißen Zielring. Für jedes Flugzeug gibt es eine eigene Bestzeit.
-  Ins Ziel kommen bringt 10 Punkte, eine neue Bestzeit 20 Punkte extra.
+  Alle Münzen geschafft = 50 Bonuspunkte.
+- **Ringrennen:** 16 Ringe in der richtigen Reihenfolge, die Zeit läuft vom grünen bis zum weißen Ring.
+  Ziel = 10 Punkte, neue Bestzeit = 20 Punkte extra.
+- **Missionen:** Erste Landung, Paketdienst, Tiefflug im Tal, Gipfeltour sowie – nur mit Hubschrauber –
+  Bergrettung und Gipfellandung. Beim ersten Mal gibt es die volle Belohnung (40–120 Punkte).
+- **Freiflug:** Start auf dem Flugplatz bei Schleching, ohne Ziel und ohne Zeit.
 
-Achtung: Andere Flugzeuge kreisen über der Gegend. Weich ihnen aus!
+Im **Hangar** kauft man mit den Punkten neue Fluggeräte und Extras:
 
-In den **Einstellungen** im Menü kann man andere Flugzeuge, Lichtsäulen, den Wegweiser-Pfeil
-und die Töne ausschalten. Punkte, Bestzeiten und Einstellungen werden im Browser gespeichert.
+| Fluggerät | Art | Preis |
+|---|---|---|
+| Piccolo | Propellerflugzeug | von Anfang an |
+| Falke | Sportflugzeug | 150 |
+| Libelle | kleiner Hubschrauber | 250 |
+| Blitz | Düsenjet | 600 |
+| Bergadler | Rettungshubschrauber | 900 |
+
+Extras: Münzmagnet (120), Goldlackierung (200), Turbo (350) – einzeln ein- und ausschaltbar.
+
+**Landen:** Flugzeuge brauchen ebenen Boden (am besten die Landebahn): Gas raus – mit Flughilfe
+sinkt das Flugzeug dann sanft –, Flügel waagerecht, nicht schneller als 5 m/s sinken. Hubschrauber
+landen fast überall, nur nicht zu schnell und nicht am Steilhang. Der Schatten unter dem Fluggerät hilft.
+
+In den **Einstellungen** gibt es außerdem Abendstimmung, böigen Wind und das Motorgeräusch.
+Die besten 5 Münzflüge und Rennzeiten stehen unter **Rekorde**. Alles wird im Browser gespeichert.
 
 ## Steuerung
 
-| Tastatur | iPad | Wirkung |
-|---|---|---|
-| W / S | Gas-Regler rechts | Gas |
-| ↑ / ↓ | Joystick hoch/runter | Nase runter/hoch |
-| ← / → | Joystick links/rechts | kippen (Kurve) |
-| A / D | – | Seitenruder |
-| C | 📷 | Kamera wechseln |
-| H | Hilfe | Flughilfe an/aus |
-| Leertaste | ↻ | Neustart |
-| M | ✈ | Flugzeug wählen |
+| Tastatur | iPad | Flugzeug | Hubschrauber |
+|---|---|---|---|
+| W / S | Regler rechts | Gas | steigen/sinken (Mitte = schweben) |
+| ↑ / ↓ | Joystick hoch/runter | Nase runter/hoch | vorwärts/rückwärts |
+| ← / → | Joystick links/rechts | kippen (Kurve) | drehen |
+| A / D | – | Seitenruder, am Boden lenken | seitwärts |
+| C | 📷 | Kamera wechseln | |
+| H | Hilfe | Flughilfe an/aus | |
+| P | ⏸ | Pause | |
+| Leertaste | ↻ | Neustart | |
+| M | ✈ | Menü und Hangar | |
 
 Tipp fürs iPad: In Safari auf „Teilen → Zum Home-Bildschirm“ tippen, dann läuft das Spiel im Vollbild.
 

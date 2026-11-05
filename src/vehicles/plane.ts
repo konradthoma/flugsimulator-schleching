@@ -1,38 +1,32 @@
 import * as THREE from 'three';
+import { adder, mat, VehicleBase, VehicleModel } from './vehicle';
 
 /** Werte eines Flugzeugs. */
-export interface PlaneStats {
-  id: string;
-  name: string;
-  description: string;
+export interface PlaneStats extends VehicleBase {
+  kind: 'plane';
   /** Beschleunigung bei Vollgas (m/s²) */
   thrust: number;
-  /** Höchstgeschwindigkeit im Geradeausflug (m/s) */
-  maxSpeed: number;
   /** Unter dieser Geschwindigkeit verliert das Flugzeug Auftrieb (m/s) */
   stallSpeed: number;
   /** Drehgeschwindigkeiten (rad/s) */
   pitchRate: number;
   rollRate: number;
   yawRate: number;
-  /** Abstand der Verfolgerkamera (m) */
-  cameraDistance: number;
   /** Baut das 3D-Modell */
-  build: () => PlaneModel;
+  build: () => VehicleModel;
 }
 
-export interface PlaneModel {
-  model: THREE.Group;
-  /** Propeller (dreht sich), falls vorhanden */
-  propeller?: THREE.Object3D;
-  /** Düsenflamme (leuchtet je nach Gas), falls vorhanden */
-  flame?: THREE.Mesh;
-}
+/** @deprecated alter Name */
+export type PlaneModel = VehicleModel;
 
 /** Alle Flugzeuge, die man auswählen kann. */
 export const PLANES: PlaneStats[] = [
   {
     id: 'piccolo',
+    kind: 'plane',
+    price: 0,
+    agility: 0.5,
+    size: 10,
     name: 'Piccolo',
     description: 'Kleines Propellerflugzeug. Langsam und gutmütig.',
     thrust: 11,
@@ -46,6 +40,10 @@ export const PLANES: PlaneStats[] = [
   },
   {
     id: 'falke',
+    kind: 'plane',
+    price: 150,
+    agility: 0.85,
+    size: 9,
     name: 'Falke',
     description: 'Sportflugzeug. Schnell und wendig, gut für Kunstflug.',
     thrust: 17,
@@ -59,6 +57,10 @@ export const PLANES: PlaneStats[] = [
   },
   {
     id: 'blitz',
+    kind: 'plane',
+    price: 600,
+    agility: 1,
+    size: 11,
     name: 'Blitz',
     description: 'Düsenjet. Extrem schnell, aber schwer zu beherrschen.',
     thrust: 32,
@@ -78,19 +80,6 @@ export function getPlane(id: string): PlaneStats {
 
 // ---------- Modelle (Nase zeigt in Richtung -z) ----------
 
-function mat(color: string, roughness = 0.6, metalness = 0) {
-  return new THREE.MeshStandardMaterial({ color, flatShading: true, roughness, metalness });
-}
-
-function adder(model: THREE.Group) {
-  return (geo: THREE.BufferGeometry, material: THREE.Material, x: number, y: number, z: number) => {
-    const mesh = new THREE.Mesh(geo, material);
-    mesh.position.set(x, y, z);
-    model.add(mesh);
-    return mesh;
-  };
-}
-
 function buildPropeller(z: number, dark: THREE.Material, grey: THREE.Material) {
   const propeller = new THREE.Group();
   propeller.position.set(0, 0, z);
@@ -99,7 +88,7 @@ function buildPropeller(z: number, dark: THREE.Material, grey: THREE.Material) {
   return propeller;
 }
 
-function buildPiccolo(): PlaneModel {
+function buildPiccolo(): VehicleModel {
   const red = mat('#d8362f');
   const white = mat('#f5f5f0');
   const dark = mat('#2b3a4a', 0.3);
@@ -124,7 +113,7 @@ function buildPiccolo(): PlaneModel {
   return { model, propeller };
 }
 
-function buildFalke(): PlaneModel {
+function buildFalke(): VehicleModel {
   const blue = mat('#1f6fd1', 0.4);
   const white = mat('#f5f5f0', 0.4);
   const yellow = mat('#ffc928', 0.4);
@@ -150,7 +139,7 @@ function buildFalke(): PlaneModel {
   return { model, propeller };
 }
 
-function buildBlitz(): PlaneModel {
+function buildBlitz(): VehicleModel {
   const body = mat('#9aa4ad', 0.35, 0.4);
   const darkGrey = mat('#4b545c', 0.4, 0.3);
   const glass = mat('#1c2a38', 0.15);

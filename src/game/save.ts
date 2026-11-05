@@ -1,47 +1,97 @@
 /** Speichert den Spielstand im Browser (bleibt auch nach dem Schließen erhalten). */
 
-export type GameMode = 'coins' | 'race';
+export type GameMode = 'coins' | 'race' | 'missions' | 'free';
 
 export interface Settings {
   /** Andere Flugzeuge, denen man ausweichen muss */
   traffic: boolean;
   /** Lichtsäulen über den Münzgruppen */
   beacons: boolean;
-  /** Pfeil zur nächsten Münze bzw. zum nächsten Ring */
+  /** Pfeil zur nächsten Münze bzw. zum nächsten Ziel */
   pointer: boolean;
   /** Töne */
   sound: boolean;
+  /** Motorgeräusch */
+  engine: boolean;
+  /** Abendstimmung statt Mittag */
+  evening: boolean;
+  /** Böiger Wind */
+  wind: boolean;
+}
+
+export interface ScoreEntry {
+  value: number; // Punkte bzw. Sekunden
+  vehicle: string; // Name des Fluggeräts
+  date: string; // TT.MM.JJJJ
 }
 
 export interface SaveData {
-  /** Alle jemals gesammelten Punkte (damit kann man später im Shop einkaufen) */
+  /** Punkte, mit denen man im Hangar einkaufen kann */
   coins: number;
-  /** Zuletzt gewähltes Flugzeug */
+  /** Zuletzt gewähltes Fluggerät */
   plane: string;
   /** Zuletzt gewählter Spielmodus */
   mode: GameMode;
+  /** Zuletzt gewählte Mission */
+  mission: string;
   /** Beste Punktzahl in einem einzigen Münzflug */
   bestFlight: number;
-  /** Bestzeit im Ringrennen je Flugzeug (Sekunden) */
+  /** Bestzeit im Ringrennen je Fluggerät (Sekunden) */
   bestTimes: Record<string, number>;
+  /** Gekaufte Fluggeräte */
+  owned: string[];
+  /** Gekaufte Extras: true = eingeschaltet */
+  upgrades: Record<string, boolean>;
+  /** Bestzeit je geschaffter Mission (Sekunden) */
+  missions: Record<string, number>;
+  /** Bestenlisten (die besten 5) */
+  highscores: { coins: ScoreEntry[]; race: ScoreEntry[] };
   settings: Settings;
 }
 
 const KEY = 'flugsim-schleching-save';
-const DEFAULT_SETTINGS: Settings = { traffic: true, beacons: true, pointer: true, sound: true };
-const DEFAULTS: SaveData = { coins: 0, plane: 'piccolo', mode: 'coins', bestFlight: 0, bestTimes: {}, settings: DEFAULT_SETTINGS };
+const DEFAULT_SETTINGS: Settings = { traffic: true, beacons: true, pointer: true, sound: true, engine: true, evening: false, wind: false };
+
+function defaults(): SaveData {
+  return {
+    coins: 0,
+    plane: 'piccolo',
+    mode: 'coins',
+    mission: 'landung',
+    bestFlight: 0,
+    bestTimes: {},
+    owned: ['piccolo'],
+    upgrades: {},
+    missions: {},
+    highscores: { coins: [], race: [] },
+    settings: { ...DEFAULT_SETTINGS },
+  };
+}
 
 export function loadSave(): SaveData {
+  const base = defaults();
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      return { ...DEFAULTS, ...data, settings: { ...DEFAULT_SETTINGS, ...data.settings }, bestTimes: { ...data.bestTimes } };
+      const save: SaveData = {
+        ...base,
+        ...data,
+        settings: { ...DEFAULT_SETTINGS, ...data.settings },
+        bestTimes: { ...data.bestTimes },
+        upgrades: { ...data.upgrades },
+        missions: { ...data.missions },
+        highscores: { coins: data.highscores?.coins ?? [], race: data.highscores?.race ?? [] },
+      };
+      // Spielstand von vor dem Hangar: das zuletzt geflogene Flugzeug darf man behalten
+      if (!Array.isArray(data.owned)) save.owned = [...new Set(['piccolo', save.plane])];
+      if (!save.owned.includes(save.plane)) save.plane = 'piccolo';
+      return save;
     }
   } catch {
     // privater Modus o. ä.: dann eben ohne Speichern
   }
-  return { ...DEFAULTS, settings: { ...DEFAULT_SETTINGS }, bestTimes: {} };
+  return base;
 }
 
 export function writeSave(data: SaveData) {
@@ -50,6 +100,29 @@ export function writeSave(data: SaveData) {
   } catch {
     // ignorieren
   }
+}
+
+export function resetSave(): SaveData {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // ignorieren
+  }
+  return defaults();
+}
+
+/**
+ * Trägt ein Ergebnis in eine Bestenliste ein.
+ * Gibt den Platz zurück (1 = bester) oder 0, wenn es nicht für die Liste reicht.
+ */
+export function addHighscore(list: ScoreEntry[], value: number, vehicle: string, lowerIsBetter: boolean): number {
+  const d = new Date();
+  const date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  const entry = { value, vehicle, date };
+  list.push(entry);
+  list.sort((a, b) => (lowerIsBetter ? a.value - b.value : b.value - a.value));
+  list.splice(5);
+  return list.indexOf(entry) + 1;
 }
 
 /** Zeit als "1:05.3" */

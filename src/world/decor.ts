@@ -3,7 +3,7 @@ import { Terrain } from './terrain';
 import { seededRandom, valueNoise } from '../util/noise';
 
 /** Nadelwald: Bäume an Hängen, Wiesen in den flachen Tälern. */
-export function createForest(terrain: Terrain, maxTrees = 45000): THREE.InstancedMesh {
+export function createForest(terrain: Terrain, avoid: (x: number, z: number) => boolean = () => false, maxTrees = 45000): THREE.InstancedMesh {
   const geo = new THREE.ConeGeometry(5, 18, 6).translate(0, 8, 0);
   const mat = new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1 });
   const mesh = new THREE.InstancedMesh(geo, mat, maxTrees);
@@ -26,6 +26,7 @@ export function createForest(terrain: Terrain, maxTrees = 45000): THREE.Instance
     if (slope < 0.12 || slope > 1.0) continue; // flach = Wiese, sehr steil = Fels
     const forest = valueNoise(x / 500, z / 500) * 0.7 + valueNoise(x / 120, z / 120) * 0.3;
     if (forest < 0.33) continue;
+    if (avoid(x, z)) continue;
 
     const s = 0.7 + rand() * 0.7;
     pos.set(x, h - 1, z);
@@ -44,7 +45,7 @@ export function createForest(terrain: Terrain, maxTrees = 45000): THREE.Instance
 }
 
 /** Das Dorf Schleching: Häuser rund um die Mitte und eine Kirche. */
-export function createVillage(terrain: Terrain): THREE.Group {
+export function createVillage(terrain: Terrain, avoid: (x: number, z: number) => boolean = () => false): THREE.Group {
   const group = new THREE.Group();
   const rand = seededRandom(1234);
 
@@ -69,6 +70,7 @@ export function createVillage(terrain: Terrain): THREE.Group {
     const x = Math.cos(a) * r;
     const z = Math.sin(a) * r;
     if (terrain.slopeAt(x, z) > 0.08) continue;
+    if (avoid(x, z)) continue;
     if (placed.some((p) => p.distanceTo(new THREE.Vector2(x, z)) < 30)) continue;
     placed.push(new THREE.Vector2(x, z));
     q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, rand() * Math.PI);

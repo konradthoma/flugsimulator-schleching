@@ -17,8 +17,9 @@
         <div><span class="label">Geschwindigkeit</span><span id="hud-speed">0</span> km/h</div>
         <div><span class="label">Höhe</span><span id="hud-alt">0</span> m ü. NN</div>
         <div><span class="label">Über Grund</span><span id="hud-agl">0</span> m</div>
+        <div><span class="label">Steigen</span><span id="hud-vs">0</span></div>
         <div><span class="label">Richtung</span><span id="hud-heading">N</span></div>
-        <div class="throttle"><span class="label">Gas</span><div class="bar"><div id="hud-throttle"></div></div></div>
+        <div class="throttle"><span class="label" id="hud-throttle-label">Gas</span><div class="bar"><div id="hud-throttle"></div></div></div>
       </div>
       <div id="top-center">
         <div id="score"></div>
@@ -29,18 +30,7 @@
       <div id="hud-popup"></div>
       <div id="hud-warning"></div>
       <div id="hud-message"></div>
-      <div id="controls">
-        <b>Steuerung</b> <small>(K zum Ein-/Ausblenden)</small><br />
-        <kbd>W</kbd>/<kbd>S</kbd> Gas geben/wegnehmen<br />
-        <kbd>↑</kbd>/<kbd>↓</kbd> Nase runter/hoch<br />
-        <kbd>←</kbd>/<kbd>→</kbd> nach links/rechts kippen<br />
-        <kbd>A</kbd>/<kbd>D</kbd> Seitenruder<br />
-        <kbd>C</kbd> Kamera wechseln<br />
-        <kbd>I</kbd> Höhenruder umkehren: <span id="hud-invert">aus</span><br />
-        <kbd>H</kbd> Flughilfe: <span id="hud-assist">an</span><br />
-        <kbd>Leertaste</kbd> Neustart<br />
-        <kbd>M</kbd> Flugzeug wählen
-      </div>
+      <div id="controls"></div>
     </div>
     <script type="module" src="./src/main.ts"></script>
   </body>
