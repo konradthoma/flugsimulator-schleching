@@ -49,6 +49,7 @@ Die besten 5 Münzflüge und Rennzeiten stehen unter **Rekorde**. Alles wird im 
 | C | 📷 | Kamera wechseln | |
 | H | Hilfe | Flughilfe an/aus | |
 | P | ⏸ | Pause | |
+| T | 1× | Zeitraffer: 1× · 1,5× · 2× · 3× | |
 | Leertaste | ↻ | Neustart | |
 | M | ✈ | Menü und Hangar | |
 

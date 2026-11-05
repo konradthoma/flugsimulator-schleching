@@ -30,6 +30,7 @@ export class TouchControls {
       <div class="buttons">
         <button data-action="camera">📷</button>
         <button data-action="assist">Hilfe</button>
+        <button data-action="speed" class="speed">1×</button>
         <button data-action="pause">⏸</button>
         <button data-action="restart">↻</button>
         <button data-action="menu">✈</button>
@@ -151,11 +152,17 @@ export class TouchControls {
     slider.querySelector('span')!.textContent = kind === 'heli' ? 'Rotor' : 'Gas';
   }
 
+  /** Beschriftung des Zeitraffer-Knopfs */
+  setSpeedLabel(text: string) {
+    const b = document.querySelector<HTMLButtonElement>('#touch .speed');
+    if (b) b.textContent = text;
+  }
+
   showThrottle(value: number) {
     if (this.throttleFill) this.throttleFill.style.height = `${Math.round(value * 100)}%`;
   }
 
-  wasPressed(action: 'camera' | 'assist' | 'restart' | 'menu' | 'pause'): boolean {
+  wasPressed(action: 'camera' | 'assist' | 'restart' | 'menu' | 'pause' | 'speed'): boolean {
     return this.pressed.has(action);
   }
 

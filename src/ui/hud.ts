@@ -56,6 +56,13 @@ export class Hud {
     this.vs.textContent = d.onGround ? 'am Boden' : `${vs > 0 ? '▲ ' : vs < 0 ? '▼ ' : ''}${Math.abs(vs).toFixed(1)} m/s`;
   }
 
+  /** Zeitraffer-Anzeige (nur sichtbar, wenn schneller als normal) */
+  setTimeScale(scale: number) {
+    const el = $('hud-timescale');
+    el.hidden = scale === 1;
+    el.querySelector('b')!.textContent = `${String(scale).replace('.', ',')}×`;
+  }
+
   /** Steuerungshilfe und Beschriftungen passend zum Fluggerät. */
   setVehicleKind(kind: 'plane' | 'heli') {
     this.throttleLabel.textContent = kind === 'heli' ? 'Rotor' : 'Gas';
@@ -64,6 +71,7 @@ export class Hud {
       <kbd>C</kbd> Kamera wechseln<br />
       <kbd>H</kbd> Flughilfe: <span class="opt-assist">an</span><br />
       <kbd>P</kbd> Pause<br />
+      <kbd>T</kbd> Zeitraffer (1× · 1,5× · 2× · 3×)<br />
       <kbd>Leertaste</kbd> Neustart<br />
       <kbd>M</kbd> Menü und Hangar`;
   }

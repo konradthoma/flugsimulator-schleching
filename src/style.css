@@ -141,3 +141,5 @@ body.touch .label { width: 115px; font-size: 12px; }
 html, button, input, label, #menu, #menu * { touch-action: manipulation; }
 #menu { touch-action: pan-y; }
 #app canvas, #touch, .stick, .throttle-slider { touch-action: none; }
+#hud-timescale { margin-top: 2px; color: #ffd84a; font-weight: 700; }
+.buttons button.speed { font-size: 17px; }

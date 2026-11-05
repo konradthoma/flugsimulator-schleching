@@ -84,6 +84,13 @@ let assist = true;
 let paused = false;
 let pauseShown = false;
 let hintShown = false;
+/** Zeitraffer: 1 = normal, 1.5, 2 oder 3 = schneller */
+let timeScale = [1, 1.5, 2, 3].includes(save.timeScale) ? save.timeScale : 1;
+
+function showTimeScale() {
+  hud.setTimeScale(timeScale);
+  touch.setSpeedLabel(`${String(timeScale).replace('.', ',')}×`);
+}
 let outsideTime = 0;
 let flightScore = 0;
 let wasOnGround = false;
@@ -379,6 +386,7 @@ setVehicle(stats);
 vehicle.reset(new THREE.Vector3(START.x, 1100, START.z), 0, 0);
 snapCamera();
 applySettings();
+showTimeScale();
 openMenu();
 
 const groundAt = (x: number, z: number) => terrain.heightAt(x, z);
@@ -387,6 +395,82 @@ const slopeAt = (x: number, z: number) => terrain.slopeAt(x, z, 8);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'flying') paused = true;
 });
+
+/** Ein Simulationsschritt (dt in Spielzeit). */
+function simulate(dt: number) {
+  const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
+  prevPos.copy(vehicle.position);
+  wind.update(dt, save.settings.wind);
+  const reason = vehicle.update(
+    dt,
+    {
+      throttle: input.axis('KeyS', 'KeyW'),
+      pitch: clampAxis(input.axis('ArrowUp', 'ArrowDown') + touch.pitch) * (invertPitch && stats.kind === 'plane' ? -1 : 1),
+      roll: clampAxis(input.axis('ArrowLeft', 'ArrowRight') + touch.roll),
+      yaw: input.axis('KeyA', 'KeyD'),
+      assist,
+    },
+    groundAt,
+    slopeAt,
+  );
+  if (!vehicle.onGround) vehicle.position.addScaledVector(wind.velocity, dt);
+  if (reason) crash(reason);
+
+  const ground = terrain.heightAt(vehicle.position.x, vehicle.position.z);
+  const agl = vehicle.position.y - ground;
+
+  if ((state as State) !== 'crashed') {
+    if (hintShown && !vehicle.onGround) {
+      hintShown = false;
+      hud.setMessage('');
+    }
+    // Landung erkannt
+    if (vehicle.onGround && !wasOnGround && state === 'flying') {
+      sound.success();
+      hud.popup('Gelandet ✓');
+    }
+    wasOnGround = vehicle.onGround;
+
+    if (mode === 'coins') handleCoins();
+    else if (mode === 'race') handleRace(dt);
+    else if (mode === 'missions') handleMission(dt, agl);
+    else {
+      const d = Math.hypot(vehicle.position.x - airfield.center.x, vehicle.position.z - airfield.center.z);
+      hud.setTopInfo('🕊 Freiflug', d > 600 ? 'Der Pfeil zeigt zum Flugplatz' : 'Flugplatz Schleching');
+      pointTo(d > 600 ? airfield.center : undefined);
+    }
+    if ((state as State) !== 'crashed') handleTraffic();
+  }
+
+  // Gebietsgrenze
+  const margin = Math.max(Math.abs(vehicle.position.x), Math.abs(vehicle.position.z)) - terrain.half;
+  if (state === 'flying') {
+    if (margin > 500) {
+      outsideTime += dt;
+      hud.setMessage(`Du verlässt das Gebiet – kehre um!\n${Math.ceil(10 - outsideTime)}`);
+      if (outsideTime > 10) startFlight();
+    } else if (outsideTime > 0) {
+      outsideTime = 0;
+      hud.setMessage('');
+    }
+  }
+
+  syncModel(dt);
+  shadow.update(vehicle.position.x, vehicle.position.z, ground, agl, stats.size, (state as State) !== 'crashed');
+
+  const here = new THREE.Vector2(vehicle.position.x, vehicle.position.z);
+  hud.setPlace(PLACES.find((p) => p.pos.distanceTo(here) < p.radius)?.name ?? '');
+  hud.update({
+    speed: vehicle.speed,
+    altitude: vehicle.position.y,
+    aboveGround: agl,
+    heading: vehicle.headingDeg,
+    throttle: vehicle.throttle,
+    stalled: vehicle.stalled,
+    verticalSpeed: vehicle.verticalSpeed,
+    onGround: vehicle.onGround,
+  });
+}
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -401,6 +485,14 @@ function frame() {
     if (input.wasPressed('KeyI')) invertPitch = !invertPitch;
     if (input.wasPressed('KeyH') || touch.wasPressed('assist')) assist = !assist;
     if (input.wasPressed('KeyP') || input.wasPressed('Escape') || touch.wasPressed('pause')) paused = !paused;
+    if (input.wasPressed('KeyT') || touch.wasPressed('speed')) {
+      const options = [1, 1.5, 2, 3];
+      timeScale = options[(options.indexOf(timeScale) + 1) % options.length];
+      save.timeScale = timeScale;
+      writeSave(save);
+      showTimeScale();
+      hud.popup(`⏩ ${String(timeScale).replace('.', ',')}×`);
+    }
     if (input.wasPressed('Space') || touch.wasPressed('restart')) startFlight();
     if (input.wasPressed('KeyM') || touch.wasPressed('menu')) openMenu();
   }
@@ -418,87 +510,18 @@ function frame() {
   if (active) {
     const newThrottle = touch.takeThrottle();
     if (newThrottle !== null) vehicle.throttle = newThrottle;
-    const clampAxis = (v: number) => Math.max(-1, Math.min(1, v));
-    prevPos.copy(vehicle.position);
-    wind.update(dt, save.settings.wind);
-    const reason = vehicle.update(
-      dt,
-      {
-        throttle: input.axis('KeyS', 'KeyW'),
-        pitch: clampAxis(input.axis('ArrowUp', 'ArrowDown') + touch.pitch) * (invertPitch && stats.kind === 'plane' ? -1 : 1),
-        roll: clampAxis(input.axis('ArrowLeft', 'ArrowRight') + touch.roll),
-        yaw: input.axis('KeyA', 'KeyD'),
-        assist,
-      },
-      groundAt,
-      slopeAt,
-    );
-    if (!vehicle.onGround) vehicle.position.addScaledVector(wind.velocity, dt);
-    if (reason) crash(reason);
-
-    const ground = terrain.heightAt(vehicle.position.x, vehicle.position.z);
-    const agl = vehicle.position.y - ground;
-
-    if ((state as State) !== 'crashed') {
-      if (hintShown && !vehicle.onGround) {
-        hintShown = false;
-        hud.setMessage('');
-      }
-      // Landung erkannt
-      if (vehicle.onGround && !wasOnGround && state === 'flying') {
-        sound.success();
-        hud.popup('Gelandet ✓');
-      }
-      wasOnGround = vehicle.onGround;
-
-      if (mode === 'coins') handleCoins();
-      else if (mode === 'race') handleRace(dt);
-      else if (mode === 'missions') handleMission(dt, agl);
-      else {
-        const d = Math.hypot(vehicle.position.x - airfield.center.x, vehicle.position.z - airfield.center.z);
-        hud.setTopInfo('🕊 Freiflug', d > 600 ? 'Der Pfeil zeigt zum Flugplatz' : 'Flugplatz Schleching');
-        pointTo(d > 600 ? airfield.center : undefined);
-      }
-      if ((state as State) !== 'crashed') handleTraffic();
-    }
-
-    // Gebietsgrenze
-    const margin = Math.max(Math.abs(vehicle.position.x), Math.abs(vehicle.position.z)) - terrain.half;
-    if (state === 'flying') {
-      if (margin > 500) {
-        outsideTime += dt;
-        hud.setMessage(`Du verlässt das Gebiet – kehre um!\n${Math.ceil(10 - outsideTime)}`);
-        if (outsideTime > 10) startFlight();
-      } else if (outsideTime > 0) {
-        outsideTime = 0;
-        hud.setMessage('');
-      }
-    }
-
-    syncModel(dt);
-    shadow.update(vehicle.position.x, vehicle.position.z, ground, agl, stats.size, (state as State) !== 'crashed');
-
-    const here = new THREE.Vector2(vehicle.position.x, vehicle.position.z);
-    hud.setPlace(PLACES.find((p) => p.pos.distanceTo(here) < p.radius)?.name ?? '');
-    hud.update({
-      speed: vehicle.speed,
-      altitude: vehicle.position.y,
-      aboveGround: agl,
-      heading: vehicle.headingDeg,
-      throttle: vehicle.throttle,
-      stalled: vehicle.stalled,
-      verticalSpeed: vehicle.verticalSpeed,
-      onGround: vehicle.onGround,
-    });
+    // Zeitraffer: mehrere kleine Schritte statt einem großen (damit nichts durchrutscht)
+    const steps = Math.ceil(timeScale);
+    for (let i = 0; i < steps && (state === 'flying' || state === 'finished'); i++) simulate((dt * timeScale) / steps);
   }
 
   const engineKind = stats.kind === 'heli' ? 'heli' : model.flame ? 'jet' : 'prop';
   sound.engine(engineKind, vehicle.throttle, vehicle.speed, active && state !== 'crashed');
 
   if (!paused) {
-    if (mode === 'coins') coins.update(dt);
-    traffic.update(dt);
-    explosion.update(dt);
+    if (mode === 'coins') coins.update(dt * timeScale);
+    traffic.update(dt * timeScale);
+    explosion.update(dt * timeScale);
   }
   updateCamera(dt);
   terrainRenderer.update(camera.position);

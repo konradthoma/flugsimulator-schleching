@@ -47,6 +47,8 @@ export interface SaveData {
   /** Bestenlisten (die besten 5) */
   highscores: { coins: ScoreEntry[]; race: ScoreEntry[] };
   settings: Settings;
+  /** Zeitraffer (1, 1.5, 2 oder 3) */
+  timeScale: number;
 }
 
 const KEY = 'flugsim-schleching-save';
@@ -65,6 +67,7 @@ function defaults(): SaveData {
     missions: {},
     highscores: { coins: [], race: [] },
     settings: { ...DEFAULT_SETTINGS },
+    timeScale: 1,
   };
 }
 
