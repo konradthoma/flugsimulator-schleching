@@ -14,6 +14,7 @@ export class TouchControls {
   private throttleFill?: HTMLDivElement;
 
   constructor() {
+    TouchControls.preventZoom();
     this.enabled =
       window.matchMedia('(pointer: coarse)').matches ||
       'ontouchstart' in window ||
@@ -45,12 +46,41 @@ export class TouchControls {
       }),
     );
     // Verhindert Zoomen und Scrollen der Seite durch Gesten
-    document.addEventListener('gesturestart', (e) => e.preventDefault());
     // (im Menü darf aber gescrollt werden)
     document.addEventListener(
       'touchmove',
       (e) => {
         if (!(e.target instanceof Element && e.target.closest('#menu'))) e.preventDefault();
+      },
+      { passive: false },
+    );
+  }
+
+  /**
+   * Safari am iPhone ignoriert "user-scalable=no": Doppeltippen und Zwei-Finger-Zoom
+   * würden die Seite vergrößern. Das wird hier abgefangen.
+   */
+  private static preventZoom() {
+    let lastTouchEnd = 0;
+    document.addEventListener(
+      'touchend',
+      (e) => {
+        const now = performance.now();
+        // zweites Tippen kurz nach dem ersten = Doppeltippen -> nicht zoomen
+        if (now - lastTouchEnd < 350 && e.cancelable) e.preventDefault();
+        lastTouchEnd = now;
+      },
+      { passive: false },
+    );
+    document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+    }
+    // Zwei Finger gleichzeitig (Pinch) außerhalb der Steuerung
+    document.addEventListener(
+      'touchmove',
+      (e) => {
+        if (e.touches.length > 1 && e.cancelable && !(e.target instanceof Element && e.target.closest('#touch'))) e.preventDefault();
       },
       { passive: false },
     );

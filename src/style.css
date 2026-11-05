@@ -136,3 +136,8 @@ body.touch .label { width: 115px; font-size: 12px; }
   .knob { width: 58px; height: 58px; }
   .throttle-slider { width: 62px; height: 190px; }
 }
+
+/* Kein Zoomen durch Doppeltippen (iPhone) */
+html, button, input, label, #menu, #menu * { touch-action: manipulation; }
+#menu { touch-action: pan-y; }
+#app canvas, #touch, .stick, .throttle-slider { touch-action: none; }
