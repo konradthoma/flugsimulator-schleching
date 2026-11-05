@@ -22,14 +22,14 @@ export const HELIS: HeliStats[] = [
     name: 'Libelle',
     description: 'Kleiner Hubschrauber. Kann schweben, rückwärts fliegen und überall landen.',
     price: 250,
-    maxSpeed: 46, // ca. 165 km/h
-    agility: 0.75,
+    maxSpeed: 62, // ca. 225 km/h
+    agility: 0.9,
     cameraDistance: 20,
     size: 9,
-    climbRate: 9,
-    descentRate: 8,
-    maxTilt: 0.32,
-    yawRate: 1.3,
+    climbRate: 12,
+    descentRate: 10,
+    maxTilt: 0.42,
+    yawRate: 1.9,
     build: buildLibelle,
   },
   {
@@ -38,14 +38,14 @@ export const HELIS: HeliStats[] = [
     name: 'Bergadler',
     description: 'Rettungshubschrauber. Schnell, stark und gebaut für Einsätze in den Bergen.',
     price: 900,
-    maxSpeed: 74, // ca. 265 km/h
-    agility: 0.9,
+    maxSpeed: 84, // ca. 300 km/h
+    agility: 0.95,
     cameraDistance: 24,
     size: 13,
-    climbRate: 14,
-    descentRate: 11,
-    maxTilt: 0.38,
-    yawRate: 1.5,
+    climbRate: 16,
+    descentRate: 13,
+    maxTilt: 0.46,
+    yawRate: 2.1,
     build: buildBergadler,
   },
 ];

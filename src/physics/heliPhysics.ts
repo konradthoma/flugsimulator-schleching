@@ -30,6 +30,7 @@ export class HeliPhysics implements VehiclePhysics {
   private tiltF = 0; // + = Nase runter (vorwärts)
   private tiltS = 0; // + = nach rechts geneigt
   private turnLean = 0;
+  private yawRate = 0;
   private fwd = new THREE.Vector3();
   private right = new THREE.Vector3();
   private tmpQ = new THREE.Quaternion();
@@ -53,7 +54,7 @@ export class HeliPhysics implements VehiclePhysics {
   reset(position: THREE.Vector3, headingRad: number, speed: number, onGround = false) {
     this.position.copy(position);
     this.yaw = headingRad;
-    this.tiltF = this.tiltS = this.turnLean = 0;
+    this.tiltF = this.tiltS = this.turnLean = this.yawRate = 0;
     this.horizontalAxes();
     this.velocity.copy(this.fwd).multiplyScalar(speed);
     this.throttle = onGround ? 0.3 : 0.5;
@@ -84,16 +85,22 @@ export class HeliPhysics implements VehiclePhysics {
     }
     const lift = (this.throttle - 0.5) * 2;
     let targetVy = lift * (lift > 0 ? s.climbRate : s.descentRate);
-    if (c.assist) {
+    if (!c.assist) {
+      // ohne Hilfe kostet Neigen Auftrieb: wer schnell vorwärts will, muss mehr Rotor geben
+      const tiltLoss = 1 / Math.max(0.5, Math.cos(this.tiltF) * Math.cos(this.tiltS)) - 1;
+      targetVy -= tiltLoss * G * 2.5;
+    } else {
       // Flughilfe: kurz über dem Boden automatisch sanft abbremsen
       const agl = this.position.y - ground(this.position.x, this.position.z) - SKIDS;
       targetVy = Math.max(targetVy, -(1.8 + Math.max(0, agl) * 0.3));
     }
-    this.velocity.y += (targetVy - this.velocity.y) * Math.min(1, dt * 1.6);
+    this.velocity.y += (targetVy - this.velocity.y) * Math.min(1, dt * (c.assist ? 2.5 : 1.8));
 
     // --- Drehen ---
-    const turn = c.roll * s.yawRate;
-    this.yaw -= turn * dt;
+    // mit Hilfe dreht er sofort, ohne Hilfe mit etwas Schwung (dreht nach)
+    const targetYawRate = c.roll * s.yawRate;
+    this.yawRate += (targetYawRate - this.yawRate) * Math.min(1, dt * (c.assist ? 10 : 3));
+    this.yaw -= this.yawRate * dt;
     this.horizontalAxes();
 
     // --- Neigen ---
@@ -103,12 +110,12 @@ export class HeliPhysics implements VehiclePhysics {
     if (c.assist) {
       const targetF = c.pitch !== 0 ? -c.pitch * maxT : THREE.MathUtils.clamp((-vF / s.maxSpeed) * maxT * 4, -maxT, maxT);
       const targetS = c.yaw !== 0 ? c.yaw * maxT * 0.7 : THREE.MathUtils.clamp((-vS / s.maxSpeed) * maxT * 6, -maxT, maxT);
-      this.tiltF += (targetF - this.tiltF) * Math.min(1, dt * 3);
-      this.tiltS += (targetS - this.tiltS) * Math.min(1, dt * 3);
+      this.tiltF += (targetF - this.tiltF) * Math.min(1, dt * 5);
+      this.tiltS += (targetS - this.tiltS) * Math.min(1, dt * 5);
     } else {
       // ohne Hilfe bleibt die Neigung, bis man gegensteuert
-      this.tiltF = THREE.MathUtils.clamp(this.tiltF - c.pitch * 0.9 * dt, -maxT * 1.2, maxT * 1.2);
-      this.tiltS = THREE.MathUtils.clamp(this.tiltS + c.yaw * 0.9 * dt, -maxT, maxT);
+      this.tiltF = THREE.MathUtils.clamp(this.tiltF - c.pitch * 1.6 * dt, -maxT * 1.4, maxT * 1.4);
+      this.tiltS = THREE.MathUtils.clamp(this.tiltS + c.yaw * 1.6 * dt, -maxT * 1.2, maxT * 1.2);
     }
     if (this.onGround) {
       this.tiltF *= Math.exp(-dt * 6);
@@ -117,8 +124,8 @@ export class HeliPhysics implements VehiclePhysics {
 
     // --- Beschleunigen ---
     const dragK = (G * Math.tan(maxT)) / (s.maxSpeed * s.maxSpeed);
-    vF += (G * Math.tan(this.tiltF) * 1.4 - dragK * 1.4 * vF * Math.abs(vF)) * dt;
-    vS += (G * Math.tan(this.tiltS) - dragK * 4 * vS * Math.abs(vS)) * dt;
+    vF += (G * Math.tan(this.tiltF) * 2 - dragK * 2 * vF * Math.abs(vF)) * dt;
+    vS += (G * Math.tan(this.tiltS) - dragK * (c.assist ? 4 : 2) * vS * Math.abs(vS)) * dt;
     if (this.onGround) {
       vF *= Math.exp(-dt * 5);
       vS *= Math.exp(-dt * 5);
