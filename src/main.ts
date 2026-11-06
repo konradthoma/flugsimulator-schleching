@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Terrain, TerrainRenderer } from './world/terrain';
 import { createSky } from './world/sky';
-import { createForest, createVillage } from './world/decor';
+import { Scenery } from './world/scenery';
+import { createMajorFeatures } from './world/mapfeatures';
 import { Airfield } from './world/airfield';
 import { geoToWorld } from './world/places';
 import { Explosion, Shadow, Wind } from './world/effects';
@@ -44,8 +45,13 @@ const airfield = new Airfield(terrain);
 scene.add(airfield.group);
 const missions = new Missions(terrain, airfield);
 scene.add(missions.group, missions.decor);
-scene.add(createForest(terrain, (x, z) => airfield.blocks(x, z) || missions.blocks(x, z)));
-scene.add(createVillage(terrain, (x, z) => airfield.blocks(x, z)));
+const keepFree = (x: number, z: number) => airfield.blocks(x, z) || missions.blocks(x, z);
+scene.add(createMajorFeatures(terrain, keepFree));
+// Auf Handy und Tablet: Häuser und Bäume nicht ganz so weit zeigen
+const lowDetail = window.matchMedia('(pointer: coarse)').matches;
+const scenery = await Scenery.load(terrain, 'schleching', keepFree, lowDetail);
+scenery.buildAll(START);
+scene.add(scenery.group);
 const coins = new CoinField(terrain);
 scene.add(coins.group);
 const race = new Race(terrain);
@@ -59,11 +65,32 @@ scene.add(explosion.group);
 const wind = new Wind();
 
 // ---------- Orte ----------
+// Echte Orte, Inseln und Gipfel aus OpenStreetMap; angezeigt wird der nächstgelegene
+const PLACE_RADIUS: Record<string, number> = { town: 1500, village: 1000, hamlet: 350, island: 600, islet: 250, peak: 700 };
 const PLACES = [
-  { name: 'Flugplatz', pos: new THREE.Vector2(airfield.center.x, airfield.center.z), radius: 450 },
-  { name: 'Schleching', pos: geoToWorld(terrain, 47.7225, 12.3936), radius: 1200 },
-  { name: 'Geigelstein (1808 m)', pos: geoToWorld(terrain, 47.7073, 12.3345), radius: 1500 },
+  { name: 'Flugplatz Unterwössen', pos: new THREE.Vector2(airfield.center.x, airfield.center.z), radius: 500 },
+  ...(terrain.features.places ?? []).map((p) => ({
+    name: p.kind === 'peak' && p.ele ? `${p.name} (${p.ele} m)` : p.name,
+    pos: new THREE.Vector2(p.x, p.z),
+    radius: PLACE_RADIUS[p.kind] ?? 500,
+  })),
 ];
+if (!terrain.features.places) PLACES.push({ name: 'Schleching', pos: geoToWorld(terrain, 47.7225, 12.3936), radius: 1200 });
+
+function placeName(x: number, z: number): string {
+  const here = new THREE.Vector2(x, z);
+  if (PLACES[0].pos.distanceTo(here) < PLACES[0].radius) return PLACES[0].name;
+  let best = '';
+  let bestScore = 1;
+  for (const p of PLACES) {
+    const score = p.pos.distanceTo(here) / p.radius;
+    if (score < bestScore) {
+      bestScore = score;
+      best = p.name;
+    }
+  }
+  return best || terrain.lakeName(x, z);
+}
 
 // ---------- Spielzustand ----------
 const save = loadSave();
@@ -225,7 +252,7 @@ function chaseTarget(out: THREE.Vector3) {
 
 function snapCamera() {
   chaseTarget(camPos);
-  camPos.y = Math.max(camPos.y, terrain.heightAt(camPos.x, camPos.z) + 3);
+  camPos.y = Math.max(camPos.y, terrain.surfaceAt(camPos.x, camPos.z) + 3);
   camera.position.copy(camPos);
   camLook.copy(vehicle.position);
   camera.lookAt(camLook);
@@ -241,7 +268,7 @@ function updateCamera(dt: number) {
   const k = 1 - Math.exp(-dt * 4);
   chaseTarget(tmp);
   camPos.lerp(tmp, k);
-  const minY = terrain.heightAt(camPos.x, camPos.z) + 3;
+  const minY = terrain.surfaceAt(camPos.x, camPos.z) + 3;
   if (camPos.y < minY) camPos.y = minY;
   camera.position.copy(camPos);
   vehicle.getCameraForward(fwd);
@@ -389,7 +416,8 @@ applySettings();
 showTimeScale();
 openMenu();
 
-const groundAt = (x: number, z: number) => terrain.heightAt(x, z);
+// Zum Landen zählt auch der Wasserspiegel (dort gibt es dann aber einen Absturz)
+const groundAt = (x: number, z: number) => terrain.surfaceAt(x, z);
 const slopeAt = (x: number, z: number) => terrain.slopeAt(x, z, 8);
 
 document.addEventListener('visibilitychange', () => {
@@ -415,8 +443,9 @@ function simulate(dt: number) {
   );
   if (!vehicle.onGround) vehicle.position.addScaledVector(wind.velocity, dt);
   if (reason) crash(reason);
+  else if (vehicle.onGround && terrain.isWater(vehicle.position.x, vehicle.position.z)) crash('Im Wasser gelandet – dafür bräuchte man ein Wasserflugzeug!');
 
-  const ground = terrain.heightAt(vehicle.position.x, vehicle.position.z);
+  const ground = terrain.surfaceAt(vehicle.position.x, vehicle.position.z);
   const agl = vehicle.position.y - ground;
 
   if ((state as State) !== 'crashed') {
@@ -436,14 +465,14 @@ function simulate(dt: number) {
     else if (mode === 'missions') handleMission(dt, agl);
     else {
       const d = Math.hypot(vehicle.position.x - airfield.center.x, vehicle.position.z - airfield.center.z);
-      hud.setTopInfo('🕊 Freiflug', d > 600 ? 'Der Pfeil zeigt zum Flugplatz' : 'Flugplatz Schleching');
+      hud.setTopInfo('🕊 Freiflug', d > 600 ? 'Der Pfeil zeigt zum Flugplatz' : 'Flugplatz Unterwössen');
       pointTo(d > 600 ? airfield.center : undefined);
     }
     if ((state as State) !== 'crashed') handleTraffic();
   }
 
   // Gebietsgrenze
-  const margin = Math.max(Math.abs(vehicle.position.x), Math.abs(vehicle.position.z)) - terrain.half;
+  const margin = terrain.outsideDistance(vehicle.position.x, vehicle.position.z);
   if (state === 'flying') {
     if (margin > 500) {
       outsideTime += dt;
@@ -458,8 +487,7 @@ function simulate(dt: number) {
   syncModel(dt);
   shadow.update(vehicle.position.x, vehicle.position.z, ground, agl, stats.size, (state as State) !== 'crashed');
 
-  const here = new THREE.Vector2(vehicle.position.x, vehicle.position.z);
-  hud.setPlace(PLACES.find((p) => p.pos.distanceTo(here) < p.radius)?.name ?? '');
+  hud.setPlace(placeName(vehicle.position.x, vehicle.position.z));
   hud.update({
     speed: vehicle.speed,
     altitude: vehicle.position.y,
@@ -525,6 +553,7 @@ function frame() {
   }
   updateCamera(dt);
   terrainRenderer.update(camera.position);
+  scenery.update(camera.position);
   sky.dome.position.copy(camera.position);
   renderer.render(scene, camera);
   touch.showThrottle(vehicle.throttle);
@@ -536,7 +565,7 @@ requestAnimationFrame(frame);
 
 // Zum Testen in der Browser-Konsole
 (window as unknown as Record<string, unknown>).game = {
-  camera, scene, terrain, coins, race, traffic, save, airfield, missions,
+  camera, scene, terrain, scenery, coins, race, traffic, save, airfield, missions,
   get vehicle() { return vehicle; },
   get model() { return model; },
   get state() { return state; },

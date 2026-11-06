@@ -4,70 +4,188 @@ import { hash2, smoothstep, valueNoise } from '../util/noise';
 export interface TerrainMeta {
   name: string;
   center: { lat: number; lon: number };
-  sizeMeters: number;
-  grid: number;
+  /** Grenzen in Metern relativ zu Schleching (Norden = negatives z) */
+  bounds: { west: number; east: number; north: number; south: number };
+  spacing: number;
+  cols: number;
+  rows: number;
   format: string;
   minHeight: number;
   maxHeight: number;
 }
 
+/** Seen, Flüsse, Straßen und Landebahnen aus OpenStreetMap */
+export interface MapFeatures {
+  attribution: string;
+  lakes: { name: string; level: number; rings: number[][] }[];
+  rivers: { w: number; pts: number[] }[];
+  /** k: 0 Autobahn, 1 Bundesstraße, 2 Landstraße, 3 Ortsstraße, 4 Feldweg, 5 Bahn */
+  roads: { k: number; w: number; pts: number[] }[];
+  /** Orte, Inseln und Gipfel (kann bei älteren Daten fehlen) */
+  places?: { name: string; kind: string; x: number; z: number; ele?: number }[];
+  runways: { ref: string; width: number; surface: string; a: [number, number]; b: [number, number] }[];
+}
+
+/** Bodenbedeckung (wie in tools/fetch-osm.mjs) */
+export const LAND = {
+  meadow: 0,
+  forest: 1,
+  water: 2,
+  settlement: 3,
+  rock: 4,
+  wetland: 5,
+  scrub: 6,
+  clearing: 7,
+  farmland: 8,
+  industrial: 9,
+  scree: 10,
+} as const;
+const LAKE_SHORE = 32;
+const LAKE_DEEP = 144;
+
 /** Breite des Randstreifens, in dem die Berge sanft zum Flachland abfallen. */
 const EDGE_FADE = 800;
 
+/** Lädt eine gzip-Datei (entpackt sie selbst, falls der Server es nicht schon getan hat). */
+export async function fetchGz(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Konnte ${url} nicht laden (${res.status})`);
+  const buf = await res.arrayBuffer();
+  const head = new Uint8Array(buf, 0, 2);
+  if (head[0] !== 0x1f || head[1] !== 0x8b) return buf;
+  if (typeof DecompressionStream === 'undefined') throw new Error('Dieser Browser ist zu alt für den Flugsimulator.');
+  const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(stream).arrayBuffer();
+}
+
 /**
- * Die echte Berglandschaft rund um Schleching.
+ * Die echte Landschaft von Schleching bis zum Chiemsee.
  * Koordinaten: x = Meter nach Osten, z = Meter nach Süden, y = Höhe über NN.
  * Die Mitte (0, 0) ist Schleching.
  */
 export class Terrain {
+  /** Halbe Kantenlänge des Kerngebiets um Schleching (für Münzen, Rennen, Verkehr) */
   readonly half: number;
   readonly baseHeight: number;
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+  private lakeLevels: Float32Array;
 
   constructor(
-    private heights: Float32Array,
+    /** Höhen in Dezimetern */
+    private heights: Int16Array,
+    private land: Uint8Array,
     readonly meta: TerrainMeta,
+    readonly features: MapFeatures,
   ) {
-    this.half = meta.sizeMeters / 2;
+    const b = meta.bounds;
+    this.minX = b.west;
+    this.maxX = b.east;
+    this.minZ = b.north;
+    this.maxZ = b.south;
+    this.half = Math.min(-b.west, b.east, -b.north, b.south);
     this.baseHeight = meta.minHeight - 20;
+    this.lakeLevels = Float32Array.from(features.lakes, (l) => l.level);
   }
 
   static async load(name: string): Promise<Terrain> {
-    const base = import.meta.env.BASE_URL;
-    const [meta, buf] = await Promise.all([
-      fetch(`${base}terrain/${name}.json`).then((r) => r.json() as Promise<TerrainMeta>),
-      fetch(`${base}terrain/${name}.bin`).then((r) => r.arrayBuffer()),
+    const base = `${import.meta.env.BASE_URL}terrain/${name}`;
+    const [meta, heightBuf, landBuf, featureBuf] = await Promise.all([
+      fetch(`${base}.json`).then((r) => r.json() as Promise<TerrainMeta>),
+      fetchGz(`${base}-height.bin.gz`),
+      fetchGz(`${base}-land.bin.gz`),
+      fetchGz(`${base}-features.json.gz`),
     ]);
-    return new Terrain(decodeHeights(buf, meta), meta);
+    const features = JSON.parse(new TextDecoder().decode(featureBuf)) as MapFeatures;
+    return new Terrain(decodeHeights(heightBuf, meta), new Uint8Array(landBuf), meta, features);
+  }
+
+  get width() {
+    return this.maxX - this.minX;
+  }
+
+  get depth() {
+    return this.maxZ - this.minZ;
   }
 
   /** Echte Höhe aus den Daten (ohne Randabfall). */
   private rawHeight(x: number, z: number): number {
-    const g = this.meta.grid;
-    const fx = Math.min(g - 1.001, Math.max(0, ((x + this.half) / this.meta.sizeMeters) * (g - 1)));
-    const fz = Math.min(g - 1.001, Math.max(0, ((z + this.half) / this.meta.sizeMeters) * (g - 1)));
+    const { cols, rows, spacing } = this.meta;
+    const fx = Math.min(cols - 1.001, Math.max(0, (x - this.minX) / spacing));
+    const fz = Math.min(rows - 1.001, Math.max(0, (z - this.minZ) / spacing));
     const c = Math.floor(fx);
     const r = Math.floor(fz);
     const tx = fx - c;
     const tz = fz - r;
     const h = this.heights;
-    const i = r * g + c;
+    const i = r * cols + c;
     const top = h[i] * (1 - tx) + h[i + 1] * tx;
-    const bottom = h[i + g] * (1 - tx) + h[i + g + 1] * tx;
-    return top * (1 - tz) + bottom * tz;
+    const bottom = h[i + cols] * (1 - tx) + h[i + cols + 1] * tx;
+    return (top * (1 - tz) + bottom * tz) * 0.1;
+  }
+
+  /** Rohwert der Bodenbedeckung an der nächsten Rasterzelle */
+  private landRaw(x: number, z: number): number {
+    const { cols, rows, spacing } = this.meta;
+    const c = Math.round((x - this.minX) / spacing);
+    const r = Math.round((z - this.minZ) / spacing);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return LAND.meadow;
+    return this.land[r * cols + c];
+  }
+
+  /** Bodenbedeckung (Seen zählen als Wasser) */
+  landAt(x: number, z: number): number {
+    const v = this.landRaw(x, z);
+    return v >= LAKE_SHORE ? LAND.water : v;
+  }
+
+  /** Liegt die Stelle in einem See? */
+  isLake(x: number, z: number): boolean {
+    return this.landRaw(x, z) >= LAKE_SHORE;
+  }
+
+  /** Name des Sees an dieser Stelle (oder leer) */
+  lakeName(x: number, z: number): string {
+    const v = this.landRaw(x, z);
+    if (v < LAKE_SHORE) return '';
+    return this.features.lakes[v - (v >= LAKE_DEEP ? LAKE_DEEP : LAKE_SHORE)]?.name ?? '';
+  }
+
+  /** Steht hier Wasser (See oder breiter Fluss)? */
+  isWater(x: number, z: number): boolean {
+    const v = this.landRaw(x, z);
+    return v === LAND.water || v >= LAKE_SHORE;
   }
 
   /**
-   * Geländehöhe an einer Stelle.
+   * Geländehöhe an einer Stelle (Seeboden liegt unter dem Wasserspiegel).
    * Zu den echten Daten kommen kleine Unebenheiten an den Berghängen (nicht im Tal),
    * und zum Rand hin flacht alles sanft ab.
    */
   heightAt(x: number, z: number): number {
     let h = this.rawHeight(x, z);
-    const bumps = (valueNoise(x / 70, z / 70) - 0.5) * 7 + (valueNoise(x / 28, z / 28) - 0.5) * 3;
-    h += bumps * smoothstep(620, 850, h);
-    const edgeDist = Math.min(this.half - Math.abs(x), this.half - Math.abs(z));
+    const v = this.landRaw(x, z);
+    if (v >= LAKE_SHORE) {
+      const deep = v >= LAKE_DEEP;
+      const level = this.lakeLevels[v - (deep ? LAKE_DEEP : LAKE_SHORE)];
+      h = Math.min(h, level - (deep ? 2.5 : 0.4));
+    } else if (h > 620) {
+      const bumps = (valueNoise(x / 70, z / 70) - 0.5) * 7 + (valueNoise(x / 28, z / 28) - 0.5) * 3;
+      h += bumps * smoothstep(620, 850, h);
+    }
+    const edgeDist = Math.min(x - this.minX, this.maxX - x, z - this.minZ, this.maxZ - z);
     const fade = smoothstep(0, EDGE_FADE, edgeDist);
     return this.baseHeight + (h - this.baseHeight) * fade;
+  }
+
+  /** Oberfläche zum Landen und für Abstände: Gelände oder Wasserspiegel. */
+  surfaceAt(x: number, z: number): number {
+    const h = this.heightAt(x, z);
+    const v = this.landRaw(x, z);
+    if (v < LAKE_SHORE) return h;
+    return Math.max(h, this.lakeLevels[v - (v >= LAKE_DEEP ? LAKE_DEEP : LAKE_SHORE)]);
   }
 
   /** Steilheit (Höhenunterschied pro Meter). */
@@ -78,24 +196,26 @@ export class Terrain {
   }
 
   isInside(x: number, z: number): boolean {
-    return Math.abs(x) < this.half && Math.abs(z) < this.half;
+    return x > this.minX && x < this.maxX && z > this.minZ && z < this.maxZ;
+  }
+
+  /** Wie weit liegt die Stelle außerhalb des Gebiets (m)? Negativ = innen. */
+  outsideDistance(x: number, z: number): number {
+    return Math.max(this.minX - x, x - this.maxX, this.minZ - z, z - this.maxZ);
   }
 }
 
-function decodeHeights(buf: ArrayBuffer, meta: TerrainMeta): Float32Array {
-  if (meta.format !== 'int16-decimeter-delta') throw new Error(`Unbekanntes Höhenformat: ${meta.format}`);
-  const g = meta.grid;
+function decodeHeights(buf: ArrayBuffer, meta: TerrainMeta): Int16Array {
+  if (meta.format !== 'int16-decimeter-delta-gz') throw new Error(`Unbekanntes Höhenformat: ${meta.format}`);
+  const { cols, rows } = meta;
   const deltas = new Int16Array(buf);
-  const dm = new Int32Array(deltas.length);
-  for (let row = 0; row < g; row++) {
-    for (let col = 0; col < g; col++) {
-      const i = row * g + col;
-      const prev = col > 0 ? dm[i - 1] : row > 0 ? dm[i - g] : 0;
-      dm[i] = prev + deltas[i];
+  const out = new Int16Array(deltas.length);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const i = row * cols + col;
+      out[i] = (col > 0 ? out[i - 1] : row > 0 ? out[i - cols] : 0) + deltas[i];
     }
   }
-  const out = new Float32Array(dm.length);
-  for (let i = 0; i < dm.length; i++) out[i] = dm[i] / 10;
   return out;
 }
 
@@ -109,14 +229,25 @@ const CHUNK_SIZE = 1000;
 const LEVEL_SEGMENTS = [128, 64, 32, 16, 8];
 /** Bis zu dieser Entfernung (m) wird die jeweilige Detailstufe verwendet */
 const LEVEL_DISTANCE = [1600, 3200, 5500, 9000, Infinity];
+/** Weiter weg verschwinden Kacheln im Dunst */
+const HIDE_DISTANCE = 23000;
 
+const C = (hex: string) => new THREE.Color(hex);
 const COLORS = {
-  meadow: new THREE.Color('#86b85c'),
-  meadowDark: new THREE.Color('#6fa04a'),
-  forestFloor: new THREE.Color('#5c9444'),
-  alpine: new THREE.Color('#a7b86e'),
-  rock: new THREE.Color('#8f8b84'),
-  snow: new THREE.Color('#f3f5f7'),
+  meadow: C('#86b85c'),
+  meadowDark: C('#6fa04a'),
+  forest: C('#4b7a37'),
+  alpine: C('#a7b86e'),
+  rock: C('#8f8b84'),
+  scree: C('#aaa59b'),
+  snow: C('#f3f5f7'),
+  water: C('#4f86a6'),
+  lakeBed: C('#3c6d8a'),
+  settlement: C('#9fab7a'),
+  industrial: C('#a9a79f'),
+  wetland: C('#8c8d5a'),
+  scrub: C('#557a3c'),
+  farm: [C('#b3bb68'), C('#9db759'), C('#c4b878'), C('#8fb35a')],
 };
 
 interface Chunk {
@@ -139,10 +270,9 @@ export class TerrainRenderer {
   private tmpColor = new THREE.Color();
 
   constructor(private terrain: Terrain) {
-    const n = Math.round(terrain.meta.sizeMeters / CHUNK_SIZE);
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        this.chunks.push({ x0: -terrain.half + i * CHUNK_SIZE, z0: -terrain.half + j * CHUNK_SIZE, level: -1 });
+    for (let z0 = terrain.minZ; z0 < terrain.maxZ - 1; z0 += CHUNK_SIZE) {
+      for (let x0 = terrain.minX; x0 < terrain.maxX - 1; x0 += CHUNK_SIZE) {
+        this.chunks.push({ x0, z0, level: -1 });
       }
     }
 
@@ -165,6 +295,7 @@ export class TerrainRenderer {
       const dx = Math.max(chunk.x0 - camera.x, 0, camera.x - (chunk.x0 + CHUNK_SIZE));
       const dz = Math.max(chunk.z0 - camera.z, 0, camera.z - (chunk.z0 + CHUNK_SIZE));
       const dist = Math.hypot(dx, dz);
+      if (chunk.mesh) chunk.mesh.visible = dist < HIDE_DISTANCE;
       const level = LEVEL_DISTANCE.findIndex((d) => dist < d);
       if (level !== chunk.level) todo.push({ chunk, level, dist });
     }
@@ -191,13 +322,50 @@ export class TerrainRenderer {
     const jitter = (hash2(Math.round(x / 9), Math.round(z / 9)) - 0.5) * 50;
     const patch = valueNoise(x / 180, z / 180);
     const h = y + jitter + (patch - 0.5) * 80;
+    const land = this.terrain.landAt(x, z);
+    let natural = true; // Fels und Schnee nur auf natürlichem Boden
 
-    out.copy(COLORS.meadow).lerp(COLORS.meadowDark, smoothstep(0.35, 0.75, patch));
-    out.lerp(COLORS.forestFloor, smoothstep(650, 820, h));
-    if (h > 1380) out.lerp(COLORS.alpine, smoothstep(1380, 1560, h));
+    switch (land) {
+      case LAND.forest:
+        out.copy(COLORS.forest);
+        break;
+      case LAND.water:
+        out.copy(this.terrain.surfaceAt(x, z) > y + 0.2 ? COLORS.lakeBed : COLORS.water);
+        natural = false;
+        break;
+      case LAND.settlement:
+        out.copy(COLORS.settlement).lerp(COLORS.meadow, patch * 0.4);
+        natural = false;
+        break;
+      case LAND.industrial:
+        out.copy(COLORS.industrial);
+        natural = false;
+        break;
+      case LAND.rock:
+        out.copy(COLORS.rock);
+        break;
+      case LAND.scree:
+        out.copy(COLORS.scree);
+        break;
+      case LAND.wetland:
+        out.copy(COLORS.wetland).lerp(COLORS.meadowDark, patch * 0.5);
+        break;
+      case LAND.scrub:
+        out.copy(COLORS.scrub);
+        break;
+      case LAND.farmland:
+        // Felder: große Flecken in verschiedenen Farben
+        out.copy(COLORS.farm[Math.floor(hash2(Math.floor(x / 140 + patch), Math.floor(z / 110)) * 4)]);
+        break;
+      default:
+        out.copy(COLORS.meadow).lerp(COLORS.meadowDark, smoothstep(0.35, 0.75, patch));
+        if (h > 1380) out.lerp(COLORS.alpine, smoothstep(1380, 1560, h));
+    }
 
-    out.lerp(COLORS.rock, smoothstep(0.62, 0.95, slope + jitter * 0.002));
-    if (h > 1680) out.lerp(COLORS.snow, smoothstep(1680, 1740, h) * (1 - smoothstep(0.6, 0.9, slope)));
+    if (natural) {
+      out.lerp(COLORS.rock, smoothstep(0.62, 0.95, slope + jitter * 0.002));
+      if (h > 1680) out.lerp(COLORS.snow, smoothstep(1680, 1740, h) * (1 - smoothstep(0.6, 0.9, slope)));
+    }
 
     const shade = 0.93 + hash2(Math.round(z / 7), Math.round(x / 7)) * 0.14;
     out.multiplyScalar(shade);

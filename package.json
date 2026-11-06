@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "terrain": "node tools/fetch-terrain.mjs"
+    "terrain": "node tools/fetch-terrain.mjs",
+    "osm": "node tools/fetch-osm.mjs"
   },
   "dependencies": {
     "three": "^0.169.0"

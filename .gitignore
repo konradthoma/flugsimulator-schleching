@@ -2,3 +2,5 @@ node_modules
 dist
 tools/.tile-cache
 website-draft/
+tools/.osm-cache
+.DS_Store

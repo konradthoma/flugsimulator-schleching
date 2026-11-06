@@ -284,6 +284,8 @@ export class PlaneMenu {
         ([key, label]) => `<label><input type="checkbox" data-setting="${key}" ${s.settings[key] ? 'checked' : ''}/> ${label}</label>`,
       ).join('')}</div>
       <h2>Spielstand</h2>
-      <p><button class="danger" data-action="reset">${this.confirmReset ? 'Wirklich alles löschen? Nochmal tippen' : 'Spielstand zurücksetzen'}</button></p>`;
+      <p><button class="danger" data-action="reset">${this.confirmReset ? 'Wirklich alles löschen? Nochmal tippen' : 'Spielstand zurücksetzen'}</button></p>
+      <h2>Kartendaten</h2>
+      <p class="hint">Gelände, Gewässer, Wald, Straßen und Gebäude: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap-Mitwirkende</a> (ODbL). Höhen: AWS Terrain Tiles (Copernicus, SRTM, data.gv.at u. a.).</p>`;
   }
 }

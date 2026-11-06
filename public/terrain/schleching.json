@@ -4,10 +4,17 @@
     "lat": 47.7225,
     "lon": 12.3936
   },
-  "sizeMeters": 20000,
-  "grid": 2048,
-  "format": "int16-decimeter-delta",
-  "minHeight": 520,
+  "bounds": {
+    "west": -10000,
+    "east": 13000,
+    "north": -26000,
+    "south": 10000
+  },
+  "spacing": 10,
+  "cols": 2301,
+  "rows": 3601,
+  "format": "int16-decimeter-delta-gz",
+  "minHeight": 464,
   "maxHeight": 1765,
-  "source": "AWS Terrain Tiles (Terrarium), Mapzen / Copernicus / SRTM u.a."
+  "source": "Höhen: AWS Terrain Tiles (Mapzen / Copernicus / SRTM / data.gv.at). Karte: © OpenStreetMap-Mitwirkende (ODbL)"
 }

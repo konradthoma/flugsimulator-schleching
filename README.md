@@ -1,7 +1,9 @@
 # Flugsimulator Schleching
 
 Ein Flugspiel im Browser: Flieg mit Flugzeugen und Hubschraubern durch die echte
-Berglandschaft rund um Schleching im Chiemgau.
+Landschaft des Chiemgaus – von Schleching und Kössen bis über den Chiemsee (23 × 36 km).
+Berge, Tiroler Ache, Seen, Wald, Straßen und alle Gebäude stammen aus echten Kartendaten;
+gestartet wird am Segelflugplatz Unterwössen.
 
 **Spielen:** https://konradthoma.github.io/flugsimulator-schleching/
 
@@ -61,8 +63,21 @@ Tipp fürs iPad: In Safari auf „Teilen → Zum Home-Bildschirm“ tippen, dann
 npm install
 npm run dev        # Spiel lokal starten: http://localhost:5173
 npm run terrain    # Höhendaten neu herunterladen (nur nötig, wenn sich das Gebiet ändert)
+npm run osm        # Kartendaten aus OpenStreetMap neu aufbereiten (nach npm run terrain)
 ```
+
+Das Gebiet ist in `tools/region.mjs` festgelegt. `npm run osm` lädt Gewässer, Wald, Ortsflächen,
+Straßen, Gebäude, Ortsnamen und Landebahnen über die Overpass-API (zwischengespeichert in
+`tools/.osm-cache/`; für frische Daten den Ordner löschen) und schreibt nach `public/terrain/`:
+
+| Datei | Inhalt |
+|---|---|
+| `schleching-height.bin.gz` | Höhen im 10-m-Raster |
+| `schleching-land.bin.gz` | Bodenbedeckung im selben Raster (Wiese, Wald, Wasser, Ort, Fels …) |
+| `schleching-features.json.gz` | Seen mit Wasserspiegel, Flüsse, Straßen, Bahn, Orte, Landebahnen |
+| `schleching-buildings.bin.gz` | Gebäude als Rechtecke mit Höhe und Art |
 
 Jede Änderung auf `main` wird automatisch auf GitHub Pages veröffentlicht.
 
-Höhendaten: AWS Terrain Tiles (Mapzen, Copernicus, SRTM u. a.).
+Höhendaten: AWS Terrain Tiles (Mapzen, Copernicus, SRTM, data.gv.at u. a.).
+Kartendaten: © [OpenStreetMap-Mitwirkende](https://www.openstreetmap.org/copyright), Lizenz ODbL.

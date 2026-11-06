@@ -18,7 +18,7 @@ const LOOKS = {
 /** Himmel mit Farbverlauf, Licht, Nebel und ein paar Wolken. */
 export function createSky(scene: THREE.Scene): Sky {
   scene.background = HORIZON_COLOR;
-  scene.fog = new THREE.Fog(HORIZON_COLOR, 3000, 14000);
+  scene.fog = new THREE.Fog(HORIZON_COLOR, 4000, 20000);
 
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(18000, 32, 16),
