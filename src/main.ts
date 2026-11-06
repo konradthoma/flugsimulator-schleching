@@ -6,6 +6,7 @@ import { createMajorFeatures } from './world/mapfeatures';
 import { Airfield } from './world/airfield';
 import { geoToWorld } from './world/places';
 import { Explosion, Shadow, Wind } from './world/effects';
+import { Volcano } from './world/volcano';
 import { createPhysics, getVehicle, VehicleStats, withTurbo } from './vehicles';
 import { paintGold, VehicleModel, VehiclePhysics } from './vehicles/vehicle';
 import { HeliPhysics } from './physics/heliPhysics';
@@ -63,6 +64,9 @@ scene.add(shadow.mesh);
 const explosion = new Explosion();
 scene.add(explosion.group);
 const wind = new Wind();
+const volcano = new Volcano(terrain);
+scene.add(volcano.group, volcano.lightObject);
+volcano.onBlast = (d) => sound.rumble(THREE.MathUtils.clamp(1 - d / 12000, 0, 1));
 
 // ---------- Orte ----------
 // Echte Orte, Inseln und Gipfel aus OpenStreetMap; angezeigt wird der nächstgelegene
@@ -120,6 +124,9 @@ function showTimeScale() {
 }
 let outsideTime = 0;
 let flightScore = 0;
+/** Punkte am Vulkan (mit Nachkommastellen; angezeigt wird ganzzahlig) */
+let volcanoPoints = 0;
+let volcanoWarning: string | null = null;
 let wasOnGround = false;
 
 let stats: VehicleStats = getVehicle(save.plane);
@@ -168,9 +175,20 @@ function openMenu() {
   });
 }
 
+/** Vulkan ein- oder ausschalten (mit Aschehimmel, ohne Bäume auf der Lava) */
+function setVolcano(on: boolean): boolean {
+  if (on) volcano.reset();
+  if (volcano.visible === on) return false;
+  volcano.visible = on;
+  sky.setAsh(on);
+  scenery.setTreeFilter(on ? (x, z) => volcano.isLava(x, z) : null);
+  return true;
+}
+
 function startFlight() {
   coins.group.visible = mode === 'coins';
   race.group.visible = mode === 'race';
+  const volcanoChanged = setVolcano(mode === 'volcano');
   const airSpeed = stats.kind === 'plane' ? stats.stallSpeed * 1.8 : 15;
   const onGroundAt = (p: THREE.Vector3, heading: number) =>
     vehicle.reset(new THREE.Vector3(p.x, terrain.heightAt(p.x, p.z), p.z), heading, 0, true);
@@ -188,6 +206,14 @@ function startFlight() {
     } else if (mode === 'free') {
       if (stats.kind === 'heli') onGroundAt(airfield.helipad, airfield.heading);
       else onGroundAt(airfield.threshold, airfield.heading);
+    } else if (mode === 'volcano') {
+      // In der Luft über dem Achental, mit Blick auf den Vulkan
+      const c = volcano.crater;
+      const away = new THREE.Vector3(airfield.center.x - c.x, 0, airfield.center.z - c.z).normalize();
+      const p = c.clone().addScaledVector(away, 5200);
+      p.y = Math.max(terrain.heightAt(p.x, p.z) + 400, c.y + 150);
+      vehicle.reset(p, Math.atan2(away.x, away.z), airSpeed);
+      volcanoPoints = 0;
     } else {
       const y = Math.max(terrain.heightAt(START.x, START.z) + 450, 1100);
       vehicle.reset(new THREE.Vector3(START.x, y, START.z), 0, airSpeed);
@@ -205,6 +231,7 @@ function startFlight() {
   hud.setWarning(null);
   syncModel(0);
   snapCamera();
+  if (volcanoChanged) scenery.buildAll(camera.position);
 }
 
 function startHint() {
@@ -227,6 +254,15 @@ function crash(reason: string) {
   }
   if (mode === 'free') {
     hud.setMessage(`💥 ${reason}\n${againText()}`);
+    return;
+  }
+  if (mode === 'volcano') {
+    const record = flightScore > save.bestVolcano;
+    if (record) save.bestVolcano = flightScore;
+    const place = flightScore > 0 ? addHighscore(save.highscores.volcano, flightScore, stats.name, false) : 0;
+    writeSave(save);
+    const placeLine = place > 0 && !record ? ` · Platz ${place} in der Bestenliste` : '';
+    hud.setMessage(`💥 ${reason}\n🌋 ${flightScore} Punkte am Vulkan${record ? ' – neuer Rekord! 🏆' : placeLine}\n${againText()}`);
     return;
   }
   const record = flightScore > save.bestFlight;
@@ -382,6 +418,30 @@ function handleMission(dt: number, agl: number) {
   pointTo(done ? undefined : missions.target);
 }
 
+// ---------- Vulkan ----------
+function handleVolcano(dt: number, agl: number) {
+  const d = volcano.distanceTo(vehicle.position);
+  const factor = d < 1200 ? 5 : d < 2200 ? 3 : d < 3500 ? 2 : d < 5000 ? 1 : 0;
+  // Auf dem Boden gibt es nichts – man muss schon fliegen
+  if (!vehicle.onGround) volcanoPoints += dt * factor * (0.5 + volcano.intensity * 0.5);
+  const whole = Math.floor(volcanoPoints);
+  if (whole > flightScore) {
+    save.coins += whole - flightScore;
+    if (Math.floor(whole / 25) > Math.floor(flightScore / 25)) {
+      sound.coin();
+      writeSave(save);
+    }
+    flightScore = whole;
+  }
+  const near = factor === 5 ? 'ganz nah dran!' : factor === 0 ? 'zu weit weg – flieg näher ran' : `${(d / 1000).toFixed(1).replace('.', ',')} km vom Krater`;
+  hud.setTopInfo(`🌋 ${flightScore}`, `×${factor} · ${near}${save.bestVolcano ? ` · Rekord ${save.bestVolcano}` : ''}`);
+  pointTo(d > 3500 ? volcano.crater : undefined);
+
+  const hazard = volcano.hazard(prevPos, vehicle.position, stats.size, agl, dt);
+  volcanoWarning = hazard?.kind === 'warn' ? hazard.text : null;
+  if (hazard?.kind === 'crash') crash(hazard.reason);
+}
+
 // ---------- Verkehr ----------
 function handleTraffic() {
   if (traffic.collides(prevPos, vehicle.position)) {
@@ -463,12 +523,15 @@ function simulate(dt: number) {
     if (mode === 'coins') handleCoins();
     else if (mode === 'race') handleRace(dt);
     else if (mode === 'missions') handleMission(dt, agl);
+    else if (mode === 'volcano') handleVolcano(dt, agl);
     else {
       const d = Math.hypot(vehicle.position.x - airfield.center.x, vehicle.position.z - airfield.center.z);
       hud.setTopInfo('🕊 Freiflug', d > 600 ? 'Der Pfeil zeigt zum Flugplatz' : 'Flugplatz Unterwössen');
       pointTo(d > 600 ? airfield.center : undefined);
     }
     if ((state as State) !== 'crashed') handleTraffic();
+    // Warnung des Vulkans hat Vorrang vor dem Verkehr
+    if (mode === 'volcano' && (state as State) !== 'crashed' && volcanoWarning) hud.setWarning(volcanoWarning);
   }
 
   // Gebietsgrenze
@@ -487,7 +550,8 @@ function simulate(dt: number) {
   syncModel(dt);
   shadow.update(vehicle.position.x, vehicle.position.z, ground, agl, stats.size, (state as State) !== 'crashed');
 
-  hud.setPlace(placeName(vehicle.position.x, vehicle.position.z));
+  const nearVolcano = volcano.visible && volcano.distanceTo(vehicle.position) < 1500;
+  hud.setPlace(nearVolcano ? '🌋 Vulkan Hochplatte' : placeName(vehicle.position.x, vehicle.position.z));
   hud.update({
     speed: vehicle.speed,
     altitude: vehicle.position.y,
@@ -550,8 +614,15 @@ function frame() {
     if (mode === 'coins') coins.update(dt * timeScale);
     traffic.update(dt * timeScale);
     explosion.update(dt * timeScale);
+    if (volcano.visible) volcano.update(dt * timeScale, vehicle.position);
   }
   updateCamera(dt);
+  if (volcano.shake > 0.02 && !paused) {
+    const s = volcano.shake;
+    camera.position.x += (Math.random() - 0.5) * s;
+    camera.position.y += (Math.random() - 0.5) * s;
+    camera.position.z += (Math.random() - 0.5) * s;
+  }
   terrainRenderer.update(camera.position);
   scenery.update(camera.position);
   sky.dome.position.copy(camera.position);
@@ -565,7 +636,7 @@ requestAnimationFrame(frame);
 
 // Zum Testen in der Browser-Konsole
 (window as unknown as Record<string, unknown>).game = {
-  camera, scene, terrain, scenery, coins, race, traffic, save, airfield, missions,
+  camera, scene, terrain, scenery, coins, race, traffic, save, airfield, missions, volcano,
   get vehicle() { return vehicle; },
   get model() { return model; },
   get state() { return state; },

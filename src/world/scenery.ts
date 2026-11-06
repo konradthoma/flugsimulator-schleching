@@ -338,6 +338,18 @@ export class Scenery {
 
   // ---------- Wald ----------
 
+  /** Zusätzlich keine Bäume hier (z. B. Lava). Baut den Wald neu. */
+  setTreeFilter(filter: ((x: number, z: number) => boolean) | null) {
+    if (filter === this.treeFilter) return;
+    this.treeFilter = filter;
+    for (const tile of this.tiles.values()) {
+      if (!tile.trees) continue;
+      this.dispose(tile.trees);
+      tile.trees = undefined;
+    }
+  }
+  private treeFilter: ((x: number, z: number) => boolean) | null = null;
+
   private buildTrees(tile: Tile): THREE.Group {
     const group = new THREE.Group();
     const t = this.terrain;
@@ -364,7 +376,7 @@ export class Scenery {
         if (land !== LAND.forest && !bush) continue;
         if (bush && r3 > 0.6) continue;
         const h = t.heightAt(x, z);
-        if (h > 1750 || this.avoid(x, z)) continue;
+        if (h > 1750 || this.avoid(x, z) || this.treeFilter?.(x, z)) continue;
         if (t.slopeAt(x, z, 10) > 1.15) continue;
 
         // Unten Mischwald, oben nur Fichten

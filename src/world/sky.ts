@@ -8,6 +8,8 @@ export interface Sky {
   dome: THREE.Mesh;
   /** Abendstimmung ein/aus */
   setEvening(evening: boolean): void;
+  /** Aschedunst beim Vulkanausbruch */
+  setAsh(ash: boolean): void;
 }
 
 const LOOKS = {
@@ -72,23 +74,38 @@ export function createSky(scene: THREE.Scene): Sky {
 
   const fog = scene.fog as THREE.Fog;
   const uniforms = (dome.material as THREE.ShaderMaterial).uniforms;
-  return {
-    dome,
-    setEvening(evening: boolean) {
+  let evening = false;
+  let ash = false;
+  const ASH = new THREE.Color('#7d6c62');
+  const apply = () => {
       const l = evening ? LOOKS.evening : LOOKS.day;
       const horizon = new THREE.Color(l.horizon);
+      if (ash) horizon.lerp(ASH, 0.7);
       scene.background = horizon;
       fog.color.copy(horizon);
       uniforms.bottom.value = horizon;
-      uniforms.top.value = new THREE.Color(l.zenith);
+      uniforms.top.value = new THREE.Color(l.zenith).lerp(new THREE.Color('#4a4048'), ash ? 0.6 : 0);
       sun.color.set(l.sun);
-      sun.intensity = l.sunI;
+      if (ash) sun.color.lerp(new THREE.Color('#ffb070'), 0.5);
+      sun.intensity = l.sunI * (ash ? 0.75 : 1);
+      fog.near = ash ? 3000 : 4000;
+      fog.far = ash ? 16000 : 20000;
       sun.position.set(l.sunPos[0], l.sunPos[1], l.sunPos[2]).normalize();
       hemi.color.set(l.sky);
       hemi.groundColor.set(l.groundL);
       hemi.intensity = l.hemiI;
       cloudMat.color.set(l.cloud);
       cloudMat.emissive.set(l.cloudGlow);
+  };
+  return {
+    dome,
+    setEvening(on: boolean) {
+      evening = on;
+      apply();
+    },
+    setAsh(on: boolean) {
+      ash = on;
+      apply();
     },
   };
 }

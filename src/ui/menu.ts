@@ -19,6 +19,7 @@ const MODES: { id: GameMode; title: string }[] = [
   { id: 'race', title: '⏱ Ringrennen' },
   { id: 'missions', title: '🎯 Missionen' },
   { id: 'free', title: '🕊 Freiflug' },
+  { id: 'volcano', title: '🌋 Vulkan Hochplatte' },
 ];
 
 type Tab = 'play' | 'hangar' | 'records' | 'settings';
@@ -188,6 +189,7 @@ export class PlaneMenu {
       race: best ? `Bestzeit: ${formatTime(best)}` : 'Noch keine Zeit',
       missions: `${missionsDone} von ${this.missions.length} geschafft`,
       free: 'Starte vom Flugplatz',
+      volcano: s.bestVolcano ? `Rekord: ${s.bestVolcano} Punkte` : 'Die Hochplatte bricht aus!',
     };
     let html = `<h2>Was willst du spielen?</h2><div class="modes">${MODES.map(
       (m) => `<button class="mode${m.id === s.mode ? ' selected' : ''}" data-mode="${m.id}"><b>${m.title}</b><small>${sub[m.id]}</small></button>`,
@@ -218,6 +220,8 @@ export class PlaneMenu {
       race: 'Flieg durch alle Ringe in der richtigen Reihenfolge. Die Zeit startet am grünen Ring und stoppt am weißen Zielring.',
       missions: 'Für jede Mission gibt es Punkte – beim ersten Mal die volle Belohnung.',
       free: 'Kein Ziel, keine Zeit: einfach fliegen. Du startest auf dem Flugplatz bei Schleching.',
+      volcano:
+        'Die Hochplatte ist ein Vulkan geworden! Je näher du am Krater fliegst, desto schneller gibt es Punkte. Weich den Lavabomben aus, flieg nicht zu lange durch die Asche und nicht zu tief über die Lava.',
     };
     html += `<p class="hint">${hints[s.mode]}</p>`;
     return html;
@@ -273,6 +277,7 @@ export class PlaneMenu {
     return (
       table('🪙 Meiste Münzen in einem Flug', s.highscores.coins, (v) => `${v} Punkte`) +
       table('⏱ Schnellste Ringrennen', s.highscores.race, formatTime) +
+      table('🌋 Bester Flug am Vulkan', s.highscores.volcano, (v) => `${v} Punkte`) +
       `<h2>🎯 Missionen</h2><table class="scores">${missionRows}</table>`
     );
   }

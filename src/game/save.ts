@@ -1,6 +1,6 @@
 /** Speichert den Spielstand im Browser (bleibt auch nach dem Schließen erhalten). */
 
-export type GameMode = 'coins' | 'race' | 'missions' | 'free';
+export type GameMode = 'coins' | 'race' | 'missions' | 'free' | 'volcano';
 
 export interface Settings {
   /** Andere Flugzeuge, denen man ausweichen muss */
@@ -44,8 +44,10 @@ export interface SaveData {
   upgrades: Record<string, boolean>;
   /** Bestzeit je geschaffter Mission (Sekunden) */
   missions: Record<string, number>;
+  /** Bester Flug am Vulkan (Punkte) */
+  bestVolcano: number;
   /** Bestenlisten (die besten 5) */
-  highscores: { coins: ScoreEntry[]; race: ScoreEntry[] };
+  highscores: { coins: ScoreEntry[]; race: ScoreEntry[]; volcano: ScoreEntry[] };
   settings: Settings;
   /** Zeitraffer (1, 1.5, 2 oder 3) */
   timeScale: number;
@@ -65,7 +67,8 @@ function defaults(): SaveData {
     owned: ['piccolo'],
     upgrades: {},
     missions: {},
-    highscores: { coins: [], race: [] },
+    bestVolcano: 0,
+    highscores: { coins: [], race: [], volcano: [] },
     settings: { ...DEFAULT_SETTINGS },
     timeScale: 1,
   };
@@ -84,7 +87,7 @@ export function loadSave(): SaveData {
         bestTimes: { ...data.bestTimes },
         upgrades: { ...data.upgrades },
         missions: { ...data.missions },
-        highscores: { coins: data.highscores?.coins ?? [], race: data.highscores?.race ?? [] },
+        highscores: { coins: data.highscores?.coins ?? [], race: data.highscores?.race ?? [], volcano: data.highscores?.volcano ?? [] },
       };
       // Spielstand von vor dem Hangar: das zuletzt geflogene Flugzeug darf man behalten
       if (!Array.isArray(data.owned)) save.owned = [...new Set(['piccolo', save.plane])];

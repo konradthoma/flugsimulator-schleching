@@ -112,6 +112,33 @@ export class Sound {
     n.gain.gain.setTargetAtTime(on ? volume : 0, t, 0.15);
   }
 
+  /** Tiefes Grollen (Vulkan); volume 0..1 */
+  rumble(volume: number) {
+    const ctx = this.ctx;
+    if (!this.enabled || !ctx || ctx.state !== 'running' || volume < 0.03) return;
+    const t = ctx.currentTime;
+    const len = 3;
+    const buf = ctx.createBuffer(1, ctx.sampleRate * len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < d.length; i++) {
+      last = last * 0.97 + (Math.random() * 2 - 1) * 0.03;
+      d[i] = last * 6;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 140;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.5 * volume, t + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(filter).connect(gain).connect(ctx.destination);
+    src.start(t);
+    this.tone(45, 0, 1.8, 'sine', 0.25 * volume);
+  }
+
   crash() {
     this.tone(110, 0, 0.5, 'sawtooth', 0.2);
     this.tone(70, 0.05, 0.7, 'square', 0.12);

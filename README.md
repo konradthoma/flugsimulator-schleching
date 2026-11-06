@@ -20,6 +20,7 @@ Spiele:
 - **Missionen:** Erste Landung, Paketdienst, Tiefflug im Tal, Gipfeltour sowie – nur mit Hubschrauber –
   Bergrettung und Gipfellandung. Beim ersten Mal gibt es die volle Belohnung (40–120 Punkte).
 - **Freiflug:** Start auf dem Flugplatz bei Schleching, ohne Ziel und ohne Zeit.
+- **Vulkan Hochplatte:** Die Hochplatte bricht aus – Lava fließt ins Tal, Lavabomben fliegen, eine Aschesäule steigt auf. Je näher am Krater, desto schneller gibt es Punkte.
 
 Im **Hangar** kauft man mit den Punkten neue Fluggeräte und Extras:
 
